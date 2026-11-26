@@ -32,12 +32,12 @@ public final class Colors {
 		if (b.equals("observer") || b.equals("dispenser") || b.equals("dropper") || b.equals("lever")
 			|| b.equals("hopper") || b.startsWith("iron_")) return 0xB4BCC8;
 		if (b.equals("tnt")) return 0xFF6A3D;
-		if (b.endsWith("copper_bulb") || b.endsWith("lightning_rod") || b.endsWith("copper_chest")) return 0xE0854E;
 
 		// Storage and special blocks
 		if (b.equals("ender_chest")) return 0x9B5CFF;
 		if (b.equals("trapped_chest")) return 0xFF7A5C;
 		if (b.equals("chest")) return 0xFFB84D;
+		if (b.equals("barrel")) return 0xC98A4B;
 		if (b.equals("beacon") || b.equals("conduit")) return 0x7FFFF0;
 		if (b.equals("netherite_block")) return 0x8D7580;
 		if (b.equals("respawn_anchor")) return 0x7B2FF7;

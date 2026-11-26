@@ -20,13 +20,13 @@ public final class Rules {
 		redstone_wire redstone_torch redstone_wall_torch redstone_block redstone_lamp
 		piston sticky_piston piston_head moving_piston observer repeater comparator
 		lever dispenser dropper hopper crafter note_block target daylight_detector
-		tripwire tripwire_hook tnt trapped_chest powered_rail detector_rail activator_rail
+		tripwire tripwire_hook tnt powered_rail detector_rail activator_rail
 		calibrated_sculk_sensor slime_block honey_block
 		iron_door iron_trapdoor
 		""");
 
 	private static final List<String> REDSTONE_ENDINGS =
-		List.of("_button", "_pressure_plate", "copper_bulb", "lightning_rod");
+		List.of("_button", "_pressure_plate");
 
 	private static final Set<String> NETHER = words("""
 		netherrack nether_quartz_ore nether_gold_ore ancient_debris soul_sand soul_soil
@@ -45,8 +45,8 @@ public final class Rules {
 	private static final Set<String> OVERWORLD = words("""
 		grass_block dirt coarse_dirt podzol stone deepslate granite diorite andesite tuff
 		calcite water sand red_sand sandstone clay mud moss_block snow snow_block ice
-		packed_ice blue_ice mycelium coal_ore iron_ore copper_ore gold_ore diamond_ore
-		emerald_ore lapis_ore deepslate_coal_ore deepslate_iron_ore deepslate_copper_ore
+		packed_ice blue_ice mycelium coal_ore iron_ore gold_ore diamond_ore
+		emerald_ore lapis_ore deepslate_coal_ore deepslate_iron_ore
 		deepslate_gold_ore deepslate_diamond_ore deepslate_emerald_ore deepslate_lapis_ore
 		short_grass tall_grass fern dandelion poppy cactus sugar_cane
 		""");
@@ -86,7 +86,7 @@ public final class Rules {
 		""");
 
 	private static final List<String> NEVER_GENERATED_ENDINGS =
-		List.of("shulker_box", "_concrete", "_concrete_powder");
+		List.of("_concrete", "_concrete_powder");
 
 	/** Deepslate tiles and other variants that structures only use deep underground. */
 	private static final Set<String> DEEPSLATE_BUILDING = words("""
@@ -97,11 +97,16 @@ public final class Rules {
 		deepslate_tile_stairs deepslate_tile_wall chiseled_deepslate
 		""");
 
-	/** Normal and copper chests lower than this are highlighted. */
-	private static final int DEEP_CHEST_Y = -35;
+	/** Blocks that hold items, wherever they are. */
+	private static final Set<String> STORAGE = words("chest trapped_chest ender_chest barrel");
 
-	private static boolean isChest(String block) {
-		return block.equals("chest") || block.endsWith("copper_chest");
+	private static boolean isStorage(String block) {
+		return STORAGE.contains(block) || block.endsWith("shulker_box");
+	}
+
+	/** Copper blocks (lightning rods are copper too) are never highlighted. */
+	public static boolean isCopper(String block) {
+		return block.contains("copper") || block.endsWith("lightning_rod");
 	}
 
 	private static boolean endsWithAny(String name, List<String> endings) {
@@ -123,9 +128,6 @@ public final class Rules {
 		if (DEEPSLATE_BUILDING.contains(block)) {
 			return !(dimension.equals("overworld") && (biome.equals("deep_dark") || y < 20));
 		}
-		if (isChest(block)) return dimension.equals("overworld") && y < DEEP_CHEST_Y;
-		// Ender chests generate in End cities.
-		if (block.equals("ender_chest")) return !dimension.equals("the_end");
 		return NEVER_GENERATED.contains(block) || endsWithAny(block, NEVER_GENERATED_ENDINGS);
 	}
 
@@ -143,7 +145,7 @@ public final class Rules {
 	/** True if the answer for this block can change with the biome or height. */
 	public static boolean dependsOnPlace(String block) {
 		return BIOME_BLOCKS.containsKey(block) || SCULK.contains(block)
-			|| DEEPSLATE_BUILDING.contains(block) || isChest(block);
+			|| DEEPSLATE_BUILDING.contains(block);
 	}
 
 	/**
@@ -153,6 +155,8 @@ public final class Rules {
 	 * @return why the block should be highlighted, or null if it looks normal here
 	 */
 	public static Category classify(String block, String dimension, String biome, int y) {
+		if (isCopper(block)) return null;
+		if (isStorage(block)) return Category.STORAGE;
 		if (isRedstone(block)) return Category.REDSTONE;
 
 		boolean overworld = dimension.equals("overworld");

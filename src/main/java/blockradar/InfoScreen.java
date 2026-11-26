@@ -34,11 +34,15 @@ public class InfoScreen extends Screen {
 	protected void init() {
 		int x = left() + 10;
 		int y = top() + PANEL_HEIGHT - 28;
-		addRenderableWidget(new FlatButton(x, y, 140, "Show only this block", () -> {
+		addRenderableWidget(new FlatButton(x, y, 76, "Only this", () -> {
 			BlockRadarClient.SCANNER.setFocus(hit.block());
 			onClose();
 		}).primary());
-		addRenderableWidget(new FlatButton(x + 146, y, PANEL_WIDTH - 166, "Close", this::onClose).primary());
+		addRenderableWidget(new FlatButton(x + 80, y, 86, "Chunk list", () -> {
+			Scanner.Chunk chunk = new Scanner.Chunk(hit.pos().getX() >> 4, hit.pos().getZ() >> 4);
+			this.minecraft.setScreen(new ChunkScreen(BlockRadarClient.SCANNER.report(chunk)));
+		}).primary());
+		addRenderableWidget(new FlatButton(x + 170, y, PANEL_WIDTH - 190, "Close", this::onClose).primary());
 	}
 
 	@Override

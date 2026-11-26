@@ -94,10 +94,10 @@ public class RadarScreen extends Screen {
 				rebuildWidgets();
 			}).lit(Settings.radarOn).color(0xFF4CE08A).detail(Settings.radarOn ? "ON" : "OFF");
 			row(panel, "Chunks", () -> {
-				Settings.chunkOutlines = !Settings.chunkOutlines;
+				Settings.chunks = Settings.chunks.next();
 				BlockRadarClient.saveSettings();
 				rebuildWidgets();
-			}).lit(Settings.chunkOutlines).color(0xFF2F7BFF).detail(Settings.chunkOutlines ? "ON" : "OFF");
+			}).lit(Settings.chunks != ChunkStyle.OFF).color(0xFF2F7BFF).detail(Settings.chunks.name());
 			panelHeight[panel] += 40; // room for the live numbers
 		} else if (panel == CATEGORIES) {
 			for (Category category : Category.values()) {

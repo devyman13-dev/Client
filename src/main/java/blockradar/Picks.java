@@ -6,11 +6,12 @@ public final class Picks {
 
 	/**
 	 * Ores are left out of the list on purpose: seeing them through walls is x-ray.
+	 * Copper is left out because the player does not want it.
 	 *
 	 * @param block block name without the "minecraft:" part
 	 */
 	public static boolean allowed(String block) {
-		return !block.endsWith("_ore") && !block.equals("ancient_debris");
+		return !block.endsWith("_ore") && !block.equals("ancient_debris") && !Rules.isCopper(block);
 	}
 
 	/**

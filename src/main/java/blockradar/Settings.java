@@ -15,8 +15,8 @@ public final class Settings {
 	private Settings() {}
 
 	public static boolean radarOn = true;
-	/** Blue outlines around chunks with highlighted blocks. */
-	public static boolean chunkOutlines = true;
+	/** How chunks with highlighted blocks are shown. */
+	public static ChunkStyle chunks = ChunkStyle.SOLID;
 	/** Full name of the only block to show, such as "minecraft:piston". Empty means all. */
 	public static String onlyBlock = "";
 	/** Full names of the blocks chosen in the block list. */
@@ -37,7 +37,9 @@ public final class Settings {
 			return;
 		}
 		radarOn = flag(saved, "radar", radarOn);
-		chunkOutlines = flag(saved, "chunkOutlines", chunkOutlines);
+		for (ChunkStyle style : ChunkStyle.values()) {
+			if (style.name().equals(saved.getProperty("chunks", "").trim())) chunks = style;
+		}
 		onlyBlock = saved.getProperty("onlyBlock", onlyBlock).trim();
 		String chosen = saved.getProperty("picked");
 		if (chosen != null) {
@@ -57,7 +59,7 @@ public final class Settings {
 	public static void save(Path file) {
 		Properties saved = new Properties();
 		saved.setProperty("radar", Boolean.toString(radarOn));
-		saved.setProperty("chunkOutlines", Boolean.toString(chunkOutlines));
+		saved.setProperty("chunks", chunks.name());
 		saved.setProperty("onlyBlock", onlyBlock);
 		saved.setProperty("picked", String.join(",", picked));
 		for (Category category : Category.values()) {

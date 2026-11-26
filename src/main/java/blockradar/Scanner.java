@@ -40,6 +40,10 @@ public final class Scanner {
 	}
 	/** A chunk position (block position divided by 16). */
 	public record Chunk(int x, int z) {}
+	/** One block type in a chunk. "highlighted" is how many of them the radar marks. */
+	public record Row(Block block, int count, int highlighted, int color) {}
+	/** What is in one chunk, highlighted block types first. */
+	public record ChunkReport(Chunk chunk, List<Row> rows, int highlighted) {}
 	/** Size of a touching group. "partial" means there may be more than "size". */
 	public record Group(int size, boolean partial) {}
 
@@ -316,6 +320,45 @@ public final class Scanner {
 		List<Map.Entry<Block, Integer>> byBlock = new ArrayList<>(counts.entrySet());
 		byBlock.sort((a, b) -> b.getValue() - a.getValue());
 		return new Stats(blocks, suspicious, highlighted, byBlock, categories, colors);
+	}
+
+	/** Counts every block type in a loaded chunk, leaving out ores and copper. */
+	public ChunkReport report(Chunk where) {
+		Map<Block, Integer> counts = new HashMap<>();
+		if (level != null && level.getChunkSource().getChunk(where.x(), where.z(), ChunkStatus.FULL, false)
+				instanceof LevelChunk chunk) {
+			for (LevelChunkSection section : chunk.getSections()) {
+				if (section.hasOnlyAir()) continue;
+				section.getStates().count((state, count) -> {
+					if (!state.isAir() && Picks.allowed(blockName(state.getBlock()))) {
+						counts.merge(state.getBlock(), count, Integer::sum);
+					}
+				});
+			}
+		}
+
+		Map<Block, Integer> marks = new HashMap<>();
+		Map<Block, Integer> colors = new HashMap<>();
+		int highlighted = 0;
+		ChunkData data = chunks.get(((long) where.x() << 32) | (where.z() & 0xFFFFFFFFL));
+		if (data != null) {
+			for (Map.Entry<Key, Tally> entry : data.tallies().entrySet()) {
+				if (entry.getKey().shown() == null) continue;
+				Block block = entry.getKey().block();
+				Tally tally = entry.getValue();
+				highlighted += tally.count;
+				marks.merge(block, tally.count, Integer::sum);
+				if (!tally.hits.isEmpty()) colors.putIfAbsent(block, tally.hits.get(0).color());
+			}
+		}
+
+		List<Row> rows = new ArrayList<>();
+		counts.forEach((block, count) -> rows.add(new Row(block, count,
+			marks.getOrDefault(block, 0), colors.getOrDefault(block, Theme.ACCENT))));
+		// Highlighted types first, then the most common.
+		rows.sort(Comparator.comparing((Row row) -> row.highlighted() == 0)
+			.thenComparing(row -> -row.count()));
+		return new ChunkReport(where, rows, highlighted);
 	}
 
 	/** Size of the touching group (including diagonals) of the same block as this hit. */
