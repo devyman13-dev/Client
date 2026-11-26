@@ -8,26 +8,28 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
-/** A flat, modern row that can be clicked. */
+/** A flat dropdown row. Rows that are switched on light up in their own color. */
 public class FlatButton extends AbstractWidget {
+	public static final int HEIGHT = 16;
+
 	private final Runnable action;
 	private String detail = "";
-	private int dot;
-	private Boolean switchState;
+	private int color = Theme.ACCENT;
+	private boolean lit;
 	private double share = -1;
 	private boolean primary;
 
 	public FlatButton(int x, int y, int width, String label, Runnable action) {
-		super(x, y, width, 18, Component.literal(label));
+		super(x, y, width, HEIGHT, Component.literal(label));
 		this.action = action;
 	}
 
 	/** Grey text on the right side. */
 	public FlatButton detail(String text) { detail = text; return this; }
-	/** Small colored square on the left. */
-	public FlatButton dot(int color) { dot = color; return this; }
-	/** On/off switch on the right side. */
-	public FlatButton toggle(boolean on) { switchState = on; return this; }
+	/** Color used when the row is lit. */
+	public FlatButton color(int value) { color = value; return this; }
+	/** Switched on: colored text, side stripe and tint. */
+	public FlatButton lit(boolean on) { lit = on; return this; }
 	/** Thin bar along the bottom, from 0 to 1. */
 	public FlatButton share(double value) { share = value; return this; }
 	/** Filled with the accent color and centered. */
@@ -43,32 +45,29 @@ public class FlatButton extends AbstractWidget {
 
 		if (primary) {
 			Theme.box(g, x, y, w, getHeight(), hover ? 0xFF6BA1FF : Theme.ACCENT);
-			Theme.centered(g, font, getMessage().getString(), x + w / 2, y + 5, Theme.TEXT);
+			Theme.centered(g, font, getMessage().getString(), x + w / 2, y + 4, Theme.TEXT);
 			return;
 		}
 
-		Theme.box(g, x, y, w, getHeight(), hover ? Theme.ROW_HOVER : Theme.ROW);
-		int left = x + 7;
-		if (dot != 0) {
-			Theme.box(g, left, y + 6, 6, 6, dot);
-			left += 11;
+		if (hover) g.fill(x, y, x + w, y + HEIGHT, Theme.ROW_HOVER);
+		if (lit) {
+			g.fill(x, y, x + w, y + HEIGHT, (color & 0x00FFFFFF) | 0x22000000);
+			g.fill(x, y, x + 2, y + HEIGHT, color);
 		}
 
-		int right = x + w - 7;
-		if (switchState != null) {
-			right -= 18;
-			Theme.toggle(g, right, y + 4, switchState);
-			right -= 6;
-		}
+		int right = x + w - 5;
 		if (!detail.isEmpty()) {
 			right -= font.width(detail);
-			Theme.text(g, font, detail, right, y + 5, Theme.MUTED);
-			right -= 6;
+			Theme.text(g, font, detail, right, y + 4, Theme.MUTED);
+			right -= 4;
 		}
 
-		String label = font.plainSubstrByWidth(getMessage().getString(), Math.max(0, right - left));
-		Theme.text(g, font, label, left, y + 5, Theme.TEXT);
-		if (share >= 0) Theme.bar(g, x + 7, y + 15, w - 14, share, dot != 0 ? dot : Theme.ACCENT);
+		String label = font.plainSubstrByWidth(getMessage().getString(), Math.max(0, right - x - 7));
+		Theme.text(g, font, label, x + 7, y + 4, lit ? color : hover ? Theme.TEXT : Theme.MUTED);
+		if (share >= 0) {
+			int length = (int) Math.round((w - 9) * Math.min(1, share));
+			g.fill(x + 7, y + HEIGHT - 2, x + 7 + Math.max(1, length), y + HEIGHT - 1, color);
+		}
 	}
 
 	@Override

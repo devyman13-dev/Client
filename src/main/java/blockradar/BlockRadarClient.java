@@ -8,6 +8,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.event.client.player.ClientPreAttackCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -16,12 +17,15 @@ import net.minecraft.gizmos.GizmoStyle;
 import net.minecraft.gizmos.Gizmos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 public class BlockRadarClient implements ClientModInitializer {
 	public static final Scanner SCANNER = new Scanner();
 
-	private boolean clickWasDown;
+	/** Chunk outline color. */
+	private static final int CHUNK_BLUE = 0xFF2F7BFF;
 
 	private static Path settingsFile() {
 		return FabricLoader.getInstance().getConfigDir().resolve("blockradar.properties");
@@ -44,6 +48,10 @@ public class BlockRadarClient implements ClientModInitializer {
 		KeyMapping toggleKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.toggle", InputConstants.KEY_K, keys));
 
+		// Left click. Returning true stops the game from also breaking the block.
+		ClientPreAttackCallback.EVENT.register((client, player, clickCount) ->
+			clickCount > 0 && Settings.radarOn && client.screen == null && inspect(client, player));
+
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleKey.consumeClick()) {
 				Settings.radarOn = !Settings.radarOn;
@@ -55,13 +63,6 @@ public class BlockRadarClient implements ClientModInitializer {
 			}
 			if (Settings.radarOn) SCANNER.tick(client);
 
-			// "Pick block" is middle click by default.
-			boolean clickDown = client.options.keyPickItem.isDown();
-			if (Settings.radarOn && clickDown && !clickWasDown && client.screen == null) {
-				inspect(client);
-			}
-			clickWasDown = clickDown;
-
 			if (Settings.radarOn) drawOutlines(client);
 		});
 	}
@@ -70,18 +71,43 @@ public class BlockRadarClient implements ClientModInitializer {
 	private void drawOutlines(Minecraft client) {
 		try (var collection = client.collectPerTickGizmos()) {
 			for (Scanner.Hit hit : SCANNER.drawn()) {
-				int color = hit.category().color;
+				int color = hit.color();
 				int fill = (color & 0x00FFFFFF) | 0x28000000; // same color, mostly see-through
 				Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.strokeAndFill(color, 2.0F, fill))
 					.setAlwaysOnTop();
 			}
+			if (Settings.chunkOutlines && client.level != null) {
+				int bottom = client.level.getMinY();
+				int top = client.level.getMaxY() + 1;
+				for (Scanner.Chunk chunk : SCANNER.marked()) {
+					int x = chunk.x() << 4;
+					int z = chunk.z() << 4;
+					Gizmos.cuboid(new AABB(x, bottom, z, x + 16, top, z + 16),
+						GizmoStyle.strokeAndFill(CHUNK_BLUE, 3.0F, 0)) // lines only
+						.setAlwaysOnTop();
+				}
+			}
 		}
 	}
 
-	/** Finds the highlighted block under the crosshair, even through walls, and shows its counts. */
-	private void inspect(Minecraft client) {
-		LocalPlayer player = client.player;
-		if (player == null) return;
+	/**
+	 * Shows the counts for the highlighted block under the crosshair, if there is one.
+	 * Mobs can still be hit, and normal blocks in reach can still be mined. Holding sneak
+	 * skips past a normal block to the highlight behind it.
+	 *
+	 * @return true if the counts were opened
+	 */
+	private boolean inspect(Minecraft client, LocalPlayer player) {
+		HitResult target = client.hitResult;
+		if (target != null && target.getType() == HitResult.Type.ENTITY) return false;
+		if (target instanceof BlockHitResult block && target.getType() == HitResult.Type.BLOCK) {
+			for (Scanner.Hit hit : SCANNER.drawn()) {
+				if (hit.pos().equals(block.getBlockPos())) return open(client, hit);
+			}
+			if (!player.isShiftKeyDown()) return false; // mining a normal block
+		}
+
+		// Nothing in the way: look for a highlight along the line of sight.
 		Vec3 eye = player.getEyePosition();
 		Vec3 end = eye.add(player.getViewVector(1.0F).scale(1024));
 
@@ -96,6 +122,11 @@ public class BlockRadarClient implements ClientModInitializer {
 				bestDistance = distance;
 			}
 		}
-		if (best != null) client.setScreen(new InfoScreen(best));
+		return best != null && open(client, best);
+	}
+
+	private static boolean open(Minecraft client, Scanner.Hit hit) {
+		client.setScreen(new InfoScreen(hit));
+		return true;
 	}
 }

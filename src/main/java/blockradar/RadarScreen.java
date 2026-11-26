@@ -1,22 +1,31 @@
 package blockradar;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Block;
 
-/** The menu: radar switch, a category dropdown and a block dropdown. */
+/** The menu: three dropdown panels that can be folded and dragged around. */
 public class RadarScreen extends Screen {
-	private enum Open { NONE, CATEGORIES, BLOCKS }
+	private static final int RADAR = 0;
+	private static final int CATEGORIES = 1;
+	private static final int BLOCKS = 2;
+	private static final String[] TITLES = {"Radar", "Categories", "Blocks"};
+	private static final int ROW = FlatButton.HEIGHT;
+	private static final int GAP = 6;
 
-	private static final int PANEL_WIDTH = 270;
-	private static final int ROW_WIDTH = 250;
-	private static final int ROW = 20;
+	/** Where each panel is right now, and the widgets that move with it. */
+	private final int[] panelX = new int[3];
+	private final int[] panelY = new int[3];
+	private final int[] panelWidth = new int[3];
+	private final int[] panelHeight = new int[3];
+	private final List<List<AbstractWidget>> parts = new ArrayList<>();
 
-	private Open open = Open.NONE;
 	private int scroll;
 	private int maxScroll;
 	private Scanner.Stats stats;
@@ -26,89 +35,145 @@ public class RadarScreen extends Screen {
 		super(Component.literal("Block Radar"));
 	}
 
-	private FlatButton row(int x, int y, int w, String label, Runnable action) {
-		return addRenderableWidget(new FlatButton(x, y, w, label, action));
-	}
-
-	private void show(Open next) {
-		open = open == next ? Open.NONE : next;
-		scroll = 0;
-		rebuildWidgets();
-	}
-
 	@Override
 	protected void init() {
+		// A click that opened another screen never got its release here.
+		setDragging(false);
 		stats = BlockRadarClient.SCANNER.stats();
 		maxScroll = 0;
-		int x = (this.width - ROW_WIDTH) / 2;
-		int y = 50;
+		parts.clear();
 
-		row(x, y, ROW_WIDTH, "Radar", () -> {
-			Settings.radarOn = !Settings.radarOn;
-			BlockRadarClient.saveSettings();
-			BlockRadarClient.SCANNER.clear();
-			rebuildWidgets();
-		}).toggle(Settings.radarOn);
-		y += ROW;
+		panelWidth[BLOCKS] = Math.max(100, Math.min(170, this.width - 250));
+		int small = Math.max(80, Math.min(112, (this.width - panelWidth[BLOCKS] - 4 * GAP) / 2));
+		panelWidth[RADAR] = small;
+		panelWidth[CATEGORIES] = small;
 
-		row(x, y, ROW_WIDTH, "Categories", () -> show(Open.CATEGORIES))
-			.detail(open == Open.CATEGORIES ? "▲" : "▼");
-		y += ROW;
+		int total = 2 * small + panelWidth[BLOCKS] + 2 * GAP;
+		int defaultX = Math.max(0, (this.width - total) / 2);
+		for (int panel = 0; panel < 3; panel++) {
+			// A position of -1 means the panel has never been moved.
+			int x = Settings.panelX[panel] < 0 ? defaultX : Settings.panelX[panel];
+			int y = Settings.panelY[panel] < 0 ? 24 : Settings.panelY[panel];
+			panelX[panel] = clamp(x, this.width - panelWidth[panel]);
+			panelY[panel] = clamp(y, this.height - PanelHeader.HEIGHT);
+			defaultX += panelWidth[panel] + GAP;
+			addPanel(panel);
+		}
+	}
 
-		if (open == Open.CATEGORIES) {
+	private static int clamp(int value, int max) {
+		return Math.max(0, Math.min(value, max));
+	}
+
+	private void addPanel(int panel) {
+		List<AbstractWidget> widgets = new ArrayList<>();
+		parts.add(widgets);
+		boolean open = Settings.panelOpen[panel];
+		widgets.add(addRenderableWidget(new PanelHeader(panelX[panel], panelY[panel], panelWidth[panel],
+			TITLES[panel], open,
+			(x, y) -> move(panel, x, y),
+			() -> {
+				Settings.panelOpen[panel] = !Settings.panelOpen[panel];
+				BlockRadarClient.saveSettings();
+				rebuildWidgets();
+			},
+			() -> {
+				Settings.panelX[panel] = panelX[panel];
+				Settings.panelY[panel] = panelY[panel];
+				BlockRadarClient.saveSettings();
+				rebuildWidgets();
+			})));
+		panelHeight[panel] = PanelHeader.HEIGHT;
+		if (!open) return;
+
+		if (panel == RADAR) {
+			row(panel, "Enabled", () -> {
+				Settings.radarOn = !Settings.radarOn;
+				BlockRadarClient.saveSettings();
+				BlockRadarClient.SCANNER.clear();
+				rebuildWidgets();
+			}).lit(Settings.radarOn).color(0xFF4CE08A).detail(Settings.radarOn ? "ON" : "OFF");
+			row(panel, "Chunks", () -> {
+				Settings.chunkOutlines = !Settings.chunkOutlines;
+				BlockRadarClient.saveSettings();
+				rebuildWidgets();
+			}).lit(Settings.chunkOutlines).color(0xFF2F7BFF).detail(Settings.chunkOutlines ? "ON" : "OFF");
+			panelHeight[panel] += 40; // room for the live numbers
+		} else if (panel == CATEGORIES) {
 			for (Category category : Category.values()) {
 				int count = stats.byCategory().getOrDefault(category, 0);
-				row(x + 12, y, ROW_WIDTH - 12, category.label, () -> {
+				row(panel, category.label, () -> {
 					category.enabled = !category.enabled;
 					BlockRadarClient.SCANNER.setFocus(null); // also saves the settings
 					rebuildWidgets();
-				}).dot(category.color).detail(Format.count(count)).toggle(category.enabled);
-				y += ROW;
+				}).lit(category.enabled).color(category.color).detail(Format.count(count));
 			}
+			row(panel, "Pick blocks...", () -> this.minecraft.setScreen(new BlockPickerScreen(this)))
+				.lit(true).color(Theme.ACCENT).detail(">");
+		} else {
+			addBlockRows();
 		}
-
-		Block focus = BlockRadarClient.SCANNER.focus();
-		String selected = focus == null ? "All blocks" : focus.getName().getString();
-		row(x, y, ROW_WIDTH, "Showing: " + selected, () -> show(Open.BLOCKS))
-			.detail(open == Open.BLOCKS ? "▲" : "▼");
-		y += ROW;
-
-		if (open == Open.BLOCKS) addBlockList(x + 12, y, ROW_WIDTH - 12);
-
-		row(x, this.height - 30, ROW_WIDTH, "Done", this::onClose).primary();
 	}
 
-	/** The scrollable part of the "Showing" dropdown. */
-	private void addBlockList(int x, int y, int w) {
+	/** Adds a row below the last one in a panel. */
+	private FlatButton row(int panel, String label, Runnable action) {
+		FlatButton button = new FlatButton(panelX[panel], panelY[panel] + panelHeight[panel],
+			panelWidth[panel], label, action);
+		panelHeight[panel] += ROW;
+		parts.get(panel).add(button);
+		return addRenderableWidget(button);
+	}
+
+	/** The scrollable list of block types. */
+	private void addBlockRows() {
 		List<Map.Entry<Block, Integer>> blocks = stats.byBlock();
-		int visible = Math.max(1, (this.height - 34 - y) / ROW);
+		Block focus = BlockRadarClient.SCANNER.focus();
+		int room = this.height - panelY[BLOCKS] - PanelHeader.HEIGHT - 16;
+		int visible = Math.max(1, room / ROW);
 		int total = blocks.size() + 1; // + "All blocks"
 		maxScroll = Math.max(0, total - visible);
-		scroll = Math.max(0, Math.min(scroll, maxScroll));
+		scroll = clamp(scroll, maxScroll);
 
 		for (int i = scroll; i < Math.min(total, scroll + visible); i++) {
 			if (i == 0) {
-				row(x, y, w, "All blocks", () -> choose(null)).detail(Format.count(stats.suspicious()));
+				row(BLOCKS, "All blocks", () -> choose(null))
+					.lit(focus == null).detail(Format.count(stats.highlighted()));
 			} else {
 				Block block = blocks.get(i - 1).getKey();
 				int count = blocks.get(i - 1).getValue();
-				row(x, y, w, block.getName().getString(), () -> choose(block))
-					.detail(Format.count(count) + "  " + Format.percent(count, stats.suspicious()))
-					.share((double) count / Math.max(1, stats.suspicious()));
+				row(BLOCKS, block.getName().getString(), () -> choose(block))
+					.lit(true).color(stats.colors().get(block))
+					.detail((focus == block ? "● " : "") + Format.count(count) + "  "
+						+ Format.percent(count, stats.highlighted()))
+					.share((double) count / Math.max(1, stats.highlighted()));
 			}
-			y += ROW;
 		}
 	}
 
 	private void choose(Block block) {
 		BlockRadarClient.SCANNER.setFocus(block);
-		show(Open.NONE);
+		rebuildWidgets();
+	}
+
+	private void move(int panel, int x, int y) {
+		x = clamp(x, this.width - panelWidth[panel]);
+		y = clamp(y, this.height - PanelHeader.HEIGHT);
+		int dx = x - panelX[panel];
+		int dy = y - panelY[panel];
+		for (AbstractWidget widget : parts.get(panel)) {
+			widget.setX(widget.getX() + dx);
+			widget.setY(widget.getY() + dy);
+		}
+		panelX[panel] = x;
+		panelY[panel] = y;
 	}
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-		if (open == Open.BLOCKS && vertical != 0) {
-			int next = Math.max(0, Math.min(maxScroll, scroll - (int) Math.signum(vertical)));
+		boolean overList = mouseX >= panelX[BLOCKS] && mouseX < panelX[BLOCKS] + panelWidth[BLOCKS]
+			&& mouseY >= panelY[BLOCKS] && mouseY < panelY[BLOCKS] + panelHeight[BLOCKS];
+		if (overList && vertical != 0) {
+			int next = clamp(scroll - (int) Math.signum(vertical), maxScroll);
 			if (next != scroll) {
 				scroll = next;
 				rebuildWidgets();
@@ -120,28 +185,39 @@ public class RadarScreen extends Screen {
 
 	@Override
 	public void tick() {
-		// Keep the numbers at the top up to date.
-		if (++ticks % 10 == 0) stats = BlockRadarClient.SCANNER.stats();
+		// Keep the numbers up to date.
+		if (++ticks % 10 != 0) return;
+		Scanner.Stats old = stats;
+		stats = BlockRadarClient.SCANNER.stats();
+		boolean changed = !stats.byBlock().equals(old.byBlock())
+			|| !stats.byCategory().equals(old.byCategory());
+		// Rows are rebuilt too, but never in the middle of a drag.
+		if (changed && !isDragging()) rebuildWidgets();
 	}
 
 	@Override
 	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		super.renderBackground(graphics, mouseX, mouseY, delta);
-		int x = (this.width - PANEL_WIDTH) / 2;
-		Theme.box(graphics, x, 6, PANEL_WIDTH, this.height - 12, Theme.PANEL);
-		graphics.fill(x + 10, 6, x + PANEL_WIDTH - 10, 8, Theme.ACCENT);
+		for (int panel = 0; panel < 3; panel++) {
+			graphics.fill(panelX[panel], panelY[panel], panelX[panel] + panelWidth[panel],
+				panelY[panel] + panelHeight[panel] + 2, Theme.PANEL);
+		}
 	}
 
 	@Override
 	public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		super.render(graphics, mouseX, mouseY, delta);
-		int middle = this.width / 2;
-		Theme.centered(graphics, this.font, "BLOCK RADAR", middle, 15, Theme.TEXT);
-		String summary = Format.count(stats.suspicious()) + " suspicious  •  "
-			+ Format.percent(stats.suspicious(), stats.blocks()) + " of scanned blocks";
-		Theme.centered(graphics, this.font, summary, middle, 29, Theme.MUTED);
-		Theme.bar(graphics, middle - ROW_WIDTH / 2, 42, ROW_WIDTH,
-			(double) stats.suspicious() / Math.max(1, stats.blocks()), Theme.ACCENT);
+		if (Settings.panelOpen[RADAR]) {
+			int x = panelX[RADAR] + 7;
+			int y = panelY[RADAR] + PanelHeader.HEIGHT + 2 * ROW + 5;
+			Theme.text(graphics, this.font, Format.count(stats.suspicious()) + " suspicious", x, y, Theme.TEXT);
+			Theme.text(graphics, this.font, Format.percent(stats.suspicious(), stats.blocks()) + " of blocks",
+				x, y + 13, Theme.MUTED);
+			Theme.bar(graphics, x, y + 27, panelWidth[RADAR] - 14,
+				(double) stats.suspicious() / Math.max(1, stats.blocks()), Theme.ACCENT);
+		}
+		Theme.centered(graphics, this.font, "Drag a title to move  •  Click it to fold  •  Esc to close",
+			this.width / 2, this.height - 11, Theme.MUTED);
 	}
 
 	@Override

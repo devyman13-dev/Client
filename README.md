@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `blockradar-jar`. Unzip it to get `blockradar-1.4.2.jar`.
+   `blockradar-jar`. Unzip it to get `blockradar-1.8.0.jar`.
 
 ### Option B: build on your computer
-1. Install JDK 21 or newer (for example from adoptium.net).
+1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.4.2.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.8.0.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.4.2.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.8.0.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)
@@ -29,42 +29,37 @@ in your `.minecraft/mods` folder.
 |---|---|
 | Open menu | J |
 | Radar on/off | K |
-| Inspect a highlighted block | Look at it and middle click (your Pick Block button) |
+| Inspect a highlighted block | Look at it and left click (your Attack button) |
+
+The counts appear in a panel in the top right corner.
+
+While the radar is on, left clicking a highlighted block opens its counts instead of
+breaking it (press K to break it). Mobs can still be hit and normal blocks mined. If a
+normal block in reach is in front of a highlight, sneak and left click to inspect it.
 
 ## Menu
-- The top shows how many suspicious blocks were found and what percent of all scanned
-  (non-air) blocks that is.
-- The menu follows the supplied Mist Client reference: a left module sidebar, live search,
-  favorite filter, and large block cards with counts, category color, favorite star, focus
-  click, and a separate watch switch for each block type. The picker includes base-related
-  and redstone blocks before they are first discovered.
-- The default watch list includes common storage, crafting, utility, and redstone blocks.
-  Copper blocks, netherrack, and reinforced deepslate are excluded from the picker and scan.
-- Scan range is adjustable in two-chunk steps up to 32 chunks, capped by the game's render
-  distance. The activity HUD reports matching blocks and suspicious chunks.
-- Every chunk containing a watched suspicious block gets bright blue full-height edges and a
-  blue frame around the player's current 16-block vertical section, like F3+G. Individual
-  block outlines keep their category colors. The activity HUD reports
-  the current suspicious chunk and block totals.
-- Middle-click a highlighted block to show its coordinates, category, and count in a compact
-  top-right HUD card at half scale. It stays visible until you inspect another block.
-- Block dots and world outlines share category colors: red for redstone, purple for wrong
-  dimension, orange for wrong biome, and cyan for player-placed candidates.
-- **Base blocks** covers ender chests, shulker boxes, concrete,
-  beacons and other blocks that never generate, plus deepslate tiles and variants above
-  Y=20 or outside the Overworld.
-  Normal and copper chests below Y=-35 are included too.
-- Click a block card to focus that block type; use its watch switch to choose whether it is
-  scanned and highlighted. Scroll the list for more.
-- Overworld fire and common ruined-portal blocks such as netherrack, magma, blackstone,
-  and portal nether bricks are ignored as natural features.
+Three dropdown panels. Drag a title to move a panel, click it to fold it, press Esc to close.
+Their positions are remembered.
+- **Radar**: on/off switch, blue chunk outlines on/off, number of suspicious blocks and their percent of all scanned
+  (non-air) blocks.
+- **Categories**: Redstone, Wrong dimension, Wrong biome, Player-placed, My blocks.
+- **Pick blocks...**: a searchable list of all blocks. Click the ones to look for; they are
+  saved and shown under **My blocks**. Ores and ancient debris are left out (x-ray). To see
+  only your picks, switch the other categories off. For very common blocks, every one is
+  counted but only up to 256 per chunk get positions (group sizes then show a "+").
+- **Blocks**: every block found, with count and share. Click one to show only it. Scroll for more.
+- Each block has its own highlight color, set in `Colors.java`.
+- Every scanned chunk with a highlighted block is outlined in blue, from the bottom of the
+  world to the top.
 - Redstone ore is never highlighted. Sculk is ignored where it grows naturally.
+- **Player-placed** covers ender chests (outside the End), shulker boxes, concrete,
+  beacons and other blocks that never generate, plus deepslate tiles and variants above
+  Y=20 or outside the Overworld, and normal and copper chests below Y=-35.
 
 ## Limits
 - Only chunks the game has loaded can be scanned. On servers this may be less than your
   render distance.
-- Individual block outlines are limited to the nearest 2000 hits. Blue chunk borders are drawn
-  for every scanned chunk that contains an enabled suspicious block; counts include all hits.
+- Outlines are drawn for the nearest 2000 hits; counts include all hits.
 - "Native" is decided by the lists in `Rules.java`. Blocks not listed are treated as
   normal. Natural structures (ruined portals, villages, ancient cities) and trees on
   biome borders can be flagged.

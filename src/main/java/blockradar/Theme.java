@@ -8,8 +8,8 @@ public final class Theme {
 	private Theme() {}
 
 	public static final int PANEL = 0xF0101319;
-	public static final int ROW = 0xFF1A1F29;
 	public static final int ROW_HOVER = 0xFF262D3B;
+	public static final int HEADER = 0xFF1C2230;
 	public static final int ACCENT = 0xFF4C8DFF;
 	public static final int TEXT = 0xFFF2F4F8;
 	public static final int MUTED = 0xFF8A93A6;
@@ -30,12 +30,6 @@ public final class Theme {
 
 	public static void centered(GuiGraphics g, Font font, String text, int centerX, int y, int color) {
 		text(g, font, text, centerX - font.width(text) / 2, y, color);
-	}
-
-	/** An on/off switch, 18 wide and 10 tall. */
-	public static void toggle(GuiGraphics g, int x, int y, boolean on) {
-		box(g, x, y, 18, 10, on ? ACCENT : TRACK);
-		box(g, on ? x + 9 : x + 1, y + 1, 8, 8, TEXT);
 	}
 
 	/** A thin bar showing a share from 0 to 1. */
