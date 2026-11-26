@@ -10,6 +10,7 @@ import java.util.Set;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Block;
 
@@ -20,6 +21,7 @@ public class RadarScreen extends Screen {
 	private static final int CARD_HEIGHT = 58;
 	private static final int CARD_STEP = 66;
 	private static final Set<Block> FAVORITES = new HashSet<>();
+	private static final Map<Block, Category> PICKER_BLOCKS = pickerBlocks();
 
 	private Category selectedCategory = Category.REDSTONE;
 	private int scroll;
@@ -82,7 +84,8 @@ public class RadarScreen extends Screen {
 			row(sideX + 128, categoryY, 32, "", () -> {
 				category.enabled = !category.enabled;
 				BlockRadarClient.saveSettings();
-				stats = BlockRadarClient.SCANNER.stats();
+			BlockRadarClient.SCANNER.refreshVisibility();
+			stats = BlockRadarClient.SCANNER.stats();
 				rebuildWidgets();
 			}).toggle(category.enabled);
 			categoryY += 28;
@@ -108,16 +111,20 @@ public class RadarScreen extends Screen {
 			int count = entry.getValue();
 			Category colorCategory = stats.blockCategories().getOrDefault(block, selectedCategory);
 			boolean focused = BlockRadarClient.SCANNER.focus() == block;
+			boolean watched = Settings.blockSelected(block);
 			String description = focused
-				? "This block type is the active highlight filter. Click to clear it."
-				: Format.percent(count, stats.suspicious()) + " of detected blocks · click to focus the outline";
+				? "Current outline focus · click the card to clear the focus filter"
+				: count == 0 ? "No instances found in scanned chunks yet · toggle to watch this block"
+				: Format.percent(count, stats.suspicious()) + " of selected matches · click card to focus";
 			FlatButton card = new FlatButton(mainX, cardsY + (i - scroll) * CARD_STEP,
 				contentWidth(), CARD_HEIGHT, block.getName().getString(), () -> choose(focused ? null : block));
-			card.dot(colorCategory.color).detail(Format.count(count)).toggle(focused)
+			card.dot(colorCategory.color).detail(Format.count(count))
 				.description(description).share((double) count / Math.max(1, stats.suspicious()));
 			addRenderableWidget(card);
 			row(mainX + contentWidth() - 82, cardsY + (i - scroll) * CARD_STEP + 18, 20, "",
 				() -> toggleFavorite(block)).star(FAVORITES.contains(block)).selected(FAVORITES.contains(block));
+			row(mainX + contentWidth() - 44, cardsY + (i - scroll) * CARD_STEP + 18, 28, "",
+				() -> toggleBlock(block)).toggleControl(watched);
 		}
 
 		int searchWidth = Math.min(300, Math.max(150, panelWidth() - 440));
@@ -147,16 +154,44 @@ public class RadarScreen extends Screen {
 		rebuildWidgets();
 	}
 
+	private void toggleBlock(Block block) {
+		Settings.setBlockSelected(block, !Settings.blockSelected(block));
+		BlockRadarClient.saveSettings();
+		BlockRadarClient.SCANNER.refreshVisibility();
+		stats = BlockRadarClient.SCANNER.stats();
+		rebuildWidgets();
+	}
+
 	private List<Map.Entry<Block, Integer>> categoryBlocks() {
-		List<Map.Entry<Block, Integer>> filtered = new ArrayList<>();
-		String query = searchQuery.toLowerCase(Locale.ROOT).trim();
+		Map<Block, Integer> discovered = new java.util.LinkedHashMap<>();
 		for (Map.Entry<Block, Integer> entry : stats.byBlock()) {
-			if (stats.blockCategories().get(entry.getKey()) != selectedCategory) continue;
-			if (favoritesOnly && !FAVORITES.contains(entry.getKey())) continue;
-			String name = entry.getKey().getName().getString().toLowerCase(Locale.ROOT);
-			if (query.isEmpty() || name.contains(query)) filtered.add(entry);
+			if (stats.blockCategories().get(entry.getKey()) == selectedCategory) {
+				discovered.put(entry.getKey(), entry.getValue());
+			}
 		}
+		for (Map.Entry<Block, Category> entry : PICKER_BLOCKS.entrySet()) {
+			if (entry.getValue() == selectedCategory) discovered.putIfAbsent(entry.getKey(), 0);
+		}
+		List<Map.Entry<Block, Integer>> filtered = new ArrayList<>(discovered.entrySet());
+		filtered.sort((first, second) -> {
+			int byCount = Integer.compare(second.getValue(), first.getValue());
+			return byCount != 0 ? byCount
+				: first.getKey().getName().getString().compareToIgnoreCase(second.getKey().getName().getString());
+		});
+		String query = searchQuery.toLowerCase(Locale.ROOT).trim();
+		filtered.removeIf(entry -> (favoritesOnly && !FAVORITES.contains(entry.getKey()))
+			|| (!query.isEmpty() && !entry.getKey().getName().getString().toLowerCase(Locale.ROOT).contains(query)));
 		return filtered;
+	}
+
+	private static Map<Block, Category> pickerBlocks() {
+		Map<Block, Category> blocks = new java.util.LinkedHashMap<>();
+		for (Block block : BuiltInRegistries.BLOCK) {
+			String path = BuiltInRegistries.BLOCK.getKey(block).getPath();
+			Category category = Rules.catalogCategory(path);
+			if (category != null) blocks.put(block, category);
+		}
+		return Map.copyOf(blocks);
 	}
 
 	private void toggleFavorite(Block block) {
@@ -169,7 +204,7 @@ public class RadarScreen extends Screen {
 			case REDSTONE -> "Redstone";
 			case WRONG_DIMENSION -> "Dimension";
 			case WRONG_BIOME -> "Biome";
-			case PLACED -> "Placed";
+			case PLACED -> "Base";
 		};
 	}
 

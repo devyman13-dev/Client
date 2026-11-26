@@ -3,7 +3,7 @@
   "id": "blockradar",
   "version": "${version}",
   "name": "Block Radar",
-  "description": "Base Finder with activity HUD, adjustable scan radius, and suspicious chunk outlines.",
+  "description": "Configurable Base Finder with block watch list, activity HUD, and suspicious chunk outlines.",
   "environment": "client",
   "entrypoints": { "client": ["blockradar.BlockRadarClient"] },
   "depends": {

@@ -192,7 +192,8 @@ public final class Scanner {
 	}
 
 	private boolean visible(Hit hit) {
-		return hit.category().enabled && (focus == null || hit.block() == focus);
+		return hit.category().enabled && Settings.blockSelected(hit.block())
+			&& (focus == null || hit.block() == focus);
 	}
 
 	/** Picks the nearest hits to draw. Counting always uses every hit. */
@@ -230,12 +231,12 @@ public final class Scanner {
 			blocks += data.blocks();
 			for (Hit hit : data.hits()) {
 				categories.merge(hit.category(), 1, Integer::sum);
-				if (!hit.category().enabled) continue;
-				suspicious++;
-				suspiciousChunkKeys.add(chunk.getKey());
 				counts.merge(hit.block(), 1, Integer::sum);
 				categoryCounts.computeIfAbsent(hit.block(), ignored -> new EnumMap<>(Category.class))
 					.merge(hit.category(), 1, Integer::sum);
+				if (!hit.category().enabled || !Settings.blockSelected(hit.block())) continue;
+				suspicious++;
+				suspiciousChunkKeys.add(chunk.getKey());
 			}
 		}
 		List<Map.Entry<Block, Integer>> byBlock = new ArrayList<>(counts.entrySet());
@@ -269,5 +270,11 @@ public final class Scanner {
 			}
 		}
 		return size;
+	}
+
+	/** Rebuilds the visible outline and activity summary after block/category toggles. */
+	public void refreshVisibility() {
+		refreshDrawn(Minecraft.getInstance().player);
+		cachedStats = stats();
 	}
 }

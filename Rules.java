@@ -28,6 +28,13 @@ public final class Rules {
 	private static final List<String> REDSTONE_ENDINGS =
 		List.of("_button", "_pressure_plate", "copper_bulb", "lightning_rod");
 
+	/** Common storage, crafting, and utility blocks that can indicate a player base. */
+	private static final Set<String> BASE_BLOCKS = words("""
+		chest trapped_chest barrel ender_chest furnace blast_furnace smoker crafting_table
+		enchanting_table beacon conduit respawn_anchor lodestone anvil chipped_anvil damaged_anvil
+		brewing_stand stonecutter smithing_table grindstone loom shulker_box
+		""");
+
 	private static final Set<String> NETHER = words("""
 		netherrack nether_quartz_ore nether_gold_ore ancient_debris soul_sand soul_soil
 		basalt blackstone gilded_blackstone nether_bricks crimson_nylium warped_nylium
@@ -117,7 +124,24 @@ public final class Rules {
 	}
 
 	private static boolean isRedstone(String block) {
-		return REDSTONE.contains(block) || endsWithAny(block, REDSTONE_ENDINGS);
+		return !block.contains("copper") && (REDSTONE.contains(block) || endsWithAny(block, REDSTONE_ENDINGS));
+	}
+
+	private static boolean ignoredBlock(String block) {
+		return block.contains("copper") || block.equals("netherrack")
+			|| block.equals("reinforced_deepslate") || block.equals("fire") || block.equals("soul_fire");
+	}
+
+	private static boolean isBaseBlock(String block) {
+		return BASE_BLOCKS.contains(block) || block.endsWith("_shulker_box")
+			|| NEVER_GENERATED.contains(block) || endsWithAny(block, NEVER_GENERATED_ENDINGS);
+	}
+
+	/** Menu category for the fixed picker entries that can be selected before discovery. */
+	public static Category catalogCategory(String block) {
+		if (ignoredBlock(block)) return null;
+		if (isRedstone(block)) return Category.REDSTONE;
+		return isBaseBlock(block) ? Category.PLACED : null;
 	}
 
 	private static boolean isOverworld(String block) {
@@ -160,8 +184,10 @@ public final class Rules {
 	 * @return why the block should be highlighted, or null if it looks normal here
 	 */
 	public static Category classify(String block, String dimension, String biome, int y) {
+		if (ignoredBlock(block)) return null;
 		if (dimension.equals("overworld") && OVERWORLD_NETHER_FEATURES.contains(block)) return null;
 		if (isRedstone(block)) return Category.REDSTONE;
+		if (isBaseBlock(block)) return Category.PLACED;
 
 		boolean overworld = dimension.equals("overworld");
 		boolean nether = dimension.equals("the_nether");

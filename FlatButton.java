@@ -18,6 +18,7 @@ public class FlatButton extends AbstractWidget {
 	private boolean primary;
 	private boolean selected;
 	private boolean star;
+	private boolean toggleControl;
 	private String description = "";
 
 	public FlatButton(int x, int y, int width, String label, Runnable action) {
@@ -45,6 +46,8 @@ public class FlatButton extends AbstractWidget {
 	public FlatButton description(String text) { description = text; return this; }
 	/** Compact favorite-star button. */
 	public FlatButton star(boolean value) { star = value; return this; }
+	/** Compact switch control rendered on top of a module card. */
+	public FlatButton toggleControl(boolean value) { toggleControl = true; switchState = value; return this; }
 
 	@Override
 	protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
@@ -57,6 +60,12 @@ public class FlatButton extends AbstractWidget {
 			if (hover) Theme.box(g, x, y, w, getHeight(), Theme.ROW_HOVER);
 			Theme.centered(g, font, selected ? "★" : "☆", x + w / 2, y + 6,
 				selected ? 0xFFFFD65A : 0xFFB2BDCA);
+			return;
+		}
+		if (toggleControl) {
+			if (hover) Theme.box(g, x, y, w, getHeight(), Theme.ROW_HOVER);
+			Theme.toggle(g, x + (w - 22) / 2, y + (getHeight() - 12) / 2,
+				switchState != null && switchState);
 			return;
 		}
 
@@ -82,7 +91,6 @@ public class FlatButton extends AbstractWidget {
 				left, y + 13, Theme.TEXT);
 			Theme.text(g, font, font.plainSubstrByWidth(description, Math.max(0, w - 124)),
 				left, y + 34, Theme.MUTED);
-			Theme.toggle(g, x + w - 38, y + 21, switchState != null && switchState);
 			if (share >= 0) Theme.bar(g, x + 12, y + getHeight() - 3, w - 24, share, dot != 0 ? dot : Theme.ACCENT);
 			return;
 		}

@@ -23,6 +23,7 @@ import net.minecraft.world.phys.Vec3;
 
 public class BlockRadarClient implements ClientModInitializer {
 	public static final Scanner SCANNER = new Scanner();
+	private static Scanner.Hit inspectedHit;
 
 	private boolean clickWasDown;
 
@@ -77,14 +78,7 @@ public class BlockRadarClient implements ClientModInitializer {
 		try (var collection = client.collectPerTickGizmos()) {
 			if (client.level != null) {
 				for (long key : SCANNER.drawnChunks()) {
-					int chunkX = (int) (key >> 32);
-					int chunkZ = (int) key;
-					double minY = client.level.getMinY();
-					double maxY = client.level.getMaxY();
-					AABB border = new AABB(chunkX << 4, minY, chunkZ << 4,
-						(chunkX + 1) << 4, maxY, (chunkZ + 1) << 4);
-					Gizmos.cuboid(border, GizmoStyle.strokeAndFill(0xFF4B9EFF, 2.25F, 0x060A4CFF))
-						.setAlwaysOnTop();
+					drawChunkBorder(client, key);
 				}
 			}
 			for (Scanner.Hit hit : SCANNER.drawn()) {
@@ -94,6 +88,39 @@ public class BlockRadarClient implements ClientModInitializer {
 					.setAlwaysOnTop();
 			}
 		}
+	}
+
+	/** F3+G-style full-height edges plus a bright border around the player's 16-block section. */
+	private static void drawChunkBorder(Minecraft client, long key) {
+		int chunkX = (int) (key >> 32);
+		int chunkZ = (int) key;
+		double minX = chunkX << 4;
+		double maxX = (chunkX + 1) << 4;
+		double minZ = chunkZ << 4;
+		double maxZ = (chunkZ + 1) << 4;
+		double minY = client.level.getMinY();
+		double maxY = client.level.getMaxY();
+		int blue = 0xFF006BFF;
+		Gizmos.cuboid(new AABB(minX, minY, minZ, maxX, maxY, maxZ), GizmoStyle.stroke(blue, 4.0F))
+			.setAlwaysOnTop();
+
+		int playerY = client.player == null ? (int) minY : client.player.getBlockY();
+		double sectionBottom = Math.floorDiv(playerY, 16) * 16.0;
+		drawChunkSection(client, minX, maxX, minZ, maxZ, sectionBottom, blue);
+		drawChunkSection(client, minX, maxX, minZ, maxZ, sectionBottom + 16.0, blue);
+	}
+
+	private static void drawChunkSection(Minecraft client, double minX, double maxX, double minZ,
+		double maxZ, double y, int color) {
+		if (y < client.level.getMinY() || y > client.level.getMaxY()) return;
+		Vec3 a = new Vec3(minX, y, minZ);
+		Vec3 b = new Vec3(maxX, y, minZ);
+		Vec3 c = new Vec3(maxX, y, maxZ);
+		Vec3 d = new Vec3(minX, y, maxZ);
+		Gizmos.line(a, b, color, 3.0F).setAlwaysOnTop();
+		Gizmos.line(b, c, color, 3.0F).setAlwaysOnTop();
+		Gizmos.line(c, d, color, 3.0F).setAlwaysOnTop();
+		Gizmos.line(d, a, color, 3.0F).setAlwaysOnTop();
 	}
 
 	private static void drawActivityHud(GuiGraphics graphics) {
@@ -111,6 +138,31 @@ public class BlockRadarClient implements ClientModInitializer {
 		Theme.text(graphics, client.font, title, x + 9, 14, Theme.TEXT);
 		Theme.text(graphics, client.font, activity, x + 9, 25, 0xFF8FC7FF);
 		Theme.text(graphics, client.font, range, x + 9, 36, Theme.MUTED);
+		if (inspectedHit != null) drawInspectHud(graphics, inspectedHit, stats);
+	}
+
+	/** Compact half-scale details card shown after middle-clicking a highlighted block. */
+	private static void drawInspectHud(GuiGraphics graphics, Scanner.Hit hit, Scanner.Stats stats) {
+		Minecraft client = Minecraft.getInstance();
+		float scale = 0.5F;
+		int boxWidth = 420;
+		int boxHeight = 112;
+		float x = graphics.guiWidth() - boxWidth * scale - 8;
+		var pose = graphics.pose();
+		pose.pushMatrix();
+		pose.translate(x, 58);
+		pose.scale(scale, scale);
+		Theme.box(graphics, 0, 0, boxWidth, boxHeight, Theme.PANEL);
+		Theme.outline(graphics, 0, 0, boxWidth, boxHeight, hit.category().color);
+		Theme.text(graphics, client.font, hit.block().getName().getString(), 14, 13, Theme.TEXT);
+		Theme.pill(graphics, client.font, hit.category().label.toUpperCase(), 270, 9, 132, hit.category().color);
+		Theme.text(graphics, client.font, "Position  " + hit.pos().getX() + ", " + hit.pos().getY() + ", "
+			hit.pos().getZ(), 14, 38, Theme.MUTED);
+		int count = stats.byBlock().stream().filter(entry -> entry.getKey() == hit.block())
+			.mapToInt(entry -> entry.getValue()).sum();
+		Theme.text(graphics, client.font, "Scanned total  " + Format.count(count), 14, 58, Theme.TEXT);
+		Theme.text(graphics, client.font, "Middle-click another highlighted block to inspect it", 14, 84, Theme.MUTED);
+		pose.popMatrix();
 	}
 
 	/** Finds the highlighted block under the crosshair, even through walls, and shows its counts. */
@@ -131,6 +183,6 @@ public class BlockRadarClient implements ClientModInitializer {
 				bestDistance = distance;
 			}
 		}
-		if (best != null) client.setScreen(new InfoScreen(best));
+		inspectedHit = best;
 	}
 }
