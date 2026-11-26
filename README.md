@@ -71,5 +71,3 @@ to move a panel, right click a title to fold it, Esc to close. Positions are rem
   normal. Natural structures (ruined portals, villages, ancient cities) and trees on
   biome borders can be flagged.
 - Menu settings are saved in `.minecraft/config/blockradar.properties`.
-- Many servers ban this kind of mod (DonutSMP bans radar and ESP). Use it in single player
-  or where allowed.
