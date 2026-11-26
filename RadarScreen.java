@@ -1,302 +1,337 @@
 package blockradar;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Block;
 
-/** Mist-inspired module layout with a sidebar, search field, and large block cards. */
-public class RadarScreen extends Screen {
-	private static final int PANEL_WIDTH = 1040;
-	private static final int BODY_OFFSET = 137;
-	private static final int CARD_HEIGHT = 58;
-	private static final int CARD_STEP = 66;
-	private static final Set<Block> FAVORITES = new HashSet<>();
-	private static final Map<Block, Category> PICKER_BLOCKS = pickerBlocks();
+/** The click menu: panels of switches and settings that can be dragged around. */
+public class RadarScreen extends Screen implements Menu.Listener {
+	private static final int FINDER = 0;
+	private static final int RENDER = 1;
+	private static final int SETTINGS = 2;
+	private static final int RESULTS = 3;
+	private static final String[] TITLES = {"Finder", "Render", "Settings", "Results"};
+	private static final int GAP = 6;
+	private static final int TOP = 24;
 
-	private Category selectedCategory = Category.REDSTONE;
-	private int scroll;
-	private int maxScroll;
+	/** Rows whose settings are unfolded. Remembered while the game runs. */
+	private static final Set<String> EXPANDED = new HashSet<>();
+
+	private Menu menu;
 	private Scanner.Stats stats;
 	private int ticks;
-	private String searchQuery = "";
-	private String pendingSearchQuery = "";
-	private boolean searchDirty;
-	private boolean favoritesOnly;
-	private EditBox searchBox;
 
 	public RadarScreen() {
 		super(Component.literal("Block Radar"));
 	}
 
-	private int panelWidth() { return Math.min(PANEL_WIDTH, Math.max(300, width - 24)); }
-	private int panelHeight() { return Math.min(680, Math.max(220, height - 24)); }
-	private int left() { return (width - panelWidth()) / 2; }
-	private int top() { return (height - panelHeight()) / 2; }
-	private int navX() { return left() + 14; }
-	private int contentX() { return left() + 212; }
-	private int contentWidth() { return panelWidth() - 234; }
-	private int bodyTop() { return top() + BODY_OFFSET; }
-
-	private FlatButton row(int x, int y, int w, String label, Runnable action) {
-		return addRenderableWidget(new FlatButton(x, y, w, label, action));
-	}
-
-	private void selectCategory(Category category) {
-		selectedCategory = category;
-		scroll = 0;
-		rebuildWidgets();
-	}
-
 	@Override
 	protected void init() {
 		stats = BlockRadarClient.SCANNER.stats();
-		maxScroll = 0;
-		int sideX = navX();
-		int y = bodyTop();
+		Menu old = menu;
+		menu = new Menu(this.width, this.height, this);
 
-		row(sideX, y, 162, "Base Finder", () -> {
-			Settings.radarOn = !Settings.radarOn;
-			BlockRadarClient.saveSettings();
-			BlockRadarClient.SCANNER.clear();
-			rebuildWidgets();
-		}).dot(Theme.ACCENT).toggle(Settings.radarOn);
-
-		int rangeY = y + 48;
-		row(sideX, rangeY, 32, "-", () -> changeRange(-2)).primary();
-		row(sideX + 36, rangeY, 90, Settings.scanRange + " chunks", () -> { });
-		row(sideX + 130, rangeY, 32, "+", () -> changeRange(2)).primary();
-
-		int categoryY = y + 92;
-		for (Category category : Category.values()) {
-			int count = stats.byCategory().getOrDefault(category, 0);
-			row(sideX, categoryY, 124, menuLabel(category), () -> selectCategory(category))
-				.dot(category.color).detail(Format.count(count)).selected(selectedCategory == category);
-			row(sideX + 128, categoryY, 32, "", () -> {
-				category.enabled = !category.enabled;
-				BlockRadarClient.saveSettings();
-			BlockRadarClient.SCANNER.refreshVisibility();
-			stats = BlockRadarClient.SCANNER.stats();
-				rebuildWidgets();
-			}).toggle(category.enabled);
-			categoryY += 28;
+		int side = Math.max(82, Math.min(108, (this.width - 130 - 5 * GAP) / 3));
+		int results = Math.max(96, Math.min(160, this.width - 3 * side - 5 * GAP));
+		int x = Math.max(0, (this.width - 3 * side - results - 3 * GAP) / 2);
+		for (int id = 0; id < TITLES.length; id++) {
+			int width = id == RESULTS ? results : side;
+			// A position of -1 means the panel has never been moved.
+			int panelX = Settings.panelX[id] < 0 ? x : Settings.panelX[id];
+			int panelY = Settings.panelY[id] < 0 ? TOP : Settings.panelY[id];
+			Menu.Panel panel = new Menu.Panel(id, TITLES[id], panelX, panelY, width, Settings.panelOpen[id]);
+			panel.scrolls = id == RESULTS;
+			menu.add(panel);
+			x += width + GAP;
 		}
-
-		int mainX = contentX();
-		FlatButton allCard = new FlatButton(mainX, y, contentWidth(), CARD_HEIGHT,
-			"All highlighted blocks", () -> choose(null));
-		allCard.dot(Theme.ACCENT).detail(Format.count(stats.suspicious())).toggle(BlockRadarClient.SCANNER.focus() == null)
-			.description(stats.suspiciousChunks() + " suspicious chunks in the current scan radius")
-			.selected(BlockRadarClient.SCANNER.focus() == null);
-		addRenderableWidget(allCard);
-
-		List<Map.Entry<Block, Integer>> blocks = categoryBlocks();
-		int cardsY = y + CARD_STEP;
-		int footerTop = top() + panelHeight() - 42;
-		int visible = Math.max(1, (footerTop - cardsY) / CARD_STEP);
-		maxScroll = Math.max(0, blocks.size() - visible);
-		scroll = Math.max(0, Math.min(scroll, maxScroll));
-		for (int i = scroll; i < Math.min(blocks.size(), scroll + visible); i++) {
-			Map.Entry<Block, Integer> entry = blocks.get(i);
-			Block block = entry.getKey();
-			int count = entry.getValue();
-			Category colorCategory = stats.blockCategories().getOrDefault(block, selectedCategory);
-			boolean focused = BlockRadarClient.SCANNER.focus() == block;
-			boolean watched = Settings.blockSelected(block);
-			String description = focused
-				? "Current outline focus · click the card to clear the focus filter"
-				: count == 0 ? "No instances found in scanned chunks yet · toggle to watch this block"
-				: Format.percent(count, stats.suspicious()) + " of selected matches · click card to focus";
-			FlatButton card = new FlatButton(mainX, cardsY + (i - scroll) * CARD_STEP,
-				contentWidth(), CARD_HEIGHT, block.getName().getString(), () -> choose(focused ? null : block));
-			card.dot(colorCategory.color).detail(Format.count(count))
-				.description(description).share((double) count / Math.max(1, stats.suspicious()));
-			addRenderableWidget(card);
-			row(mainX + contentWidth() - 82, cardsY + (i - scroll) * CARD_STEP + 18, 20, "",
-				() -> toggleFavorite(block)).star(FAVORITES.contains(block)).selected(FAVORITES.contains(block));
-			row(mainX + contentWidth() - 44, cardsY + (i - scroll) * CARD_STEP + 18, 28, "",
-				() -> toggleBlock(block)).toggleControl(watched);
-		}
-
-		int searchWidth = Math.min(300, Math.max(150, panelWidth() - 440));
-		int searchX = left() + panelWidth() - searchWidth - 20;
-		searchBox = new EditBox(font, searchX, top() + 19, searchWidth, 27, Component.literal("Search blocks"));
-		searchBox.setMaxLength(64);
-		searchBox.setHint(Component.literal("Search blocks..."));
-		searchBox.setValue(searchQuery);
-		searchBox.setResponder(value -> {
-			pendingSearchQuery = value;
-			searchDirty = true;
-		});
-		addRenderableWidget(searchBox);
-
-		row(left() + panelWidth() - 130, top() + panelHeight() - 34, 112, "Close", this::onClose).primary();
-		if (contentWidth() >= 506) {
-			row(mainX + 394, top() + 78, 112, favoritesOnly ? "★ Favorites" : "☆ Favorites",
-				() -> { favoritesOnly = !favoritesOnly; scroll = 0; rebuildWidgets(); })
-				.selected(favoritesOnly);
-		}
+		if (old != null) keepOrder(old);
+		fill();
 	}
 
-	private void changeRange(int delta) {
-		Settings.scanRange = Math.max(2, Math.min(32, Settings.scanRange + delta));
-		BlockRadarClient.saveSettings();
-		BlockRadarClient.SCANNER.clear();
-		rebuildWidgets();
-	}
-
-	private void toggleBlock(Block block) {
-		Settings.setBlockSelected(block, !Settings.blockSelected(block));
-		BlockRadarClient.saveSettings();
-		BlockRadarClient.SCANNER.refreshVisibility();
-		stats = BlockRadarClient.SCANNER.stats();
-		rebuildWidgets();
-	}
-
-	private List<Map.Entry<Block, Integer>> categoryBlocks() {
-		Map<Block, Integer> discovered = new java.util.LinkedHashMap<>();
-		for (Map.Entry<Block, Integer> entry : stats.byBlock()) {
-			if (stats.blockCategories().get(entry.getKey()) == selectedCategory) {
-				discovered.put(entry.getKey(), entry.getValue());
+	/** Keeps whichever panel was on top in front after a window resize. */
+	private void keepOrder(Menu old) {
+		for (Menu.Panel before : old.panels) {
+			for (Menu.Panel now : List.copyOf(menu.panels)) {
+				if (now.id != before.id) continue;
+				menu.panels.remove(now);
+				menu.panels.add(now);
 			}
 		}
-		for (Map.Entry<Block, Category> entry : PICKER_BLOCKS.entrySet()) {
-			if (entry.getValue() == selectedCategory) discovered.putIfAbsent(entry.getKey(), 0);
+	}
+
+	/** Rebuilds the rows of every panel from the current settings and counts. */
+	private void fill() {
+		for (Menu.Panel panel : menu.panels) {
+			panel.rows.clear();
+			if (panel.id == FINDER) finder(panel.rows);
+			else if (panel.id == RENDER) renderRows(panel.rows);
+			else if (panel.id == SETTINGS) settings(panel.rows);
+			else results(panel.rows);
 		}
-		List<Map.Entry<Block, Integer>> filtered = new ArrayList<>(discovered.entrySet());
-		filtered.sort((first, second) -> {
-			int byCount = Integer.compare(second.getValue(), first.getValue());
-			return byCount != 0 ? byCount
-				: first.getKey().getName().getString().compareToIgnoreCase(second.getKey().getName().getString());
-		});
-		String query = searchQuery.toLowerCase(Locale.ROOT).trim();
-		filtered.removeIf(entry -> (favoritesOnly && !FAVORITES.contains(entry.getKey()))
-			|| (!query.isEmpty() && !entry.getKey().getName().getString().toLowerCase(Locale.ROOT).contains(query)));
-		return filtered;
 	}
 
-	private static Map<Block, Category> pickerBlocks() {
-		Map<Block, Category> blocks = new java.util.LinkedHashMap<>();
-		for (Block block : BuiltInRegistries.BLOCK) {
-			String path = BuiltInRegistries.BLOCK.getKey(block).getPath();
-			Category category = Rules.catalogCategory(path);
-			if (category != null) blocks.put(block, category);
-		}
-		return Map.copyOf(blocks);
-	}
-
-	private void toggleFavorite(Block block) {
-		if (!FAVORITES.add(block)) FAVORITES.remove(block);
-		rebuildWidgets();
-	}
-
-	private static String menuLabel(Category category) {
+	private static String shortName(Category category) {
 		return switch (category) {
-			case REDSTONE -> "Redstone";
-			case WRONG_DIMENSION -> "Dimension";
-			case WRONG_BIOME -> "Biome";
-			case PLACED -> "Base";
+			case STORAGE -> "Storage";
+			case PLACED -> "Placed";
+			default -> category.label;
 		};
 	}
 
-	private void choose(Block block) {
-		BlockRadarClient.SCANNER.setFocus(block);
+	private static String about(Category category) {
+		return switch (category) {
+			case REDSTONE -> "Redstone parts such as pistons, observers and dust";
+			case STORAGE -> "Chests, barrels, ender chests and shulker boxes";
+			case PLACED -> "Blocks that world generation does not place";
+			case PICKED -> "The blocks you chose under Pick blocks";
+		};
+	}
+
+	private void finder(List<Menu.Row> rows) {
+		for (Category category : Category.values()) {
+			int count = stats.byCategory().getOrDefault(category, 0);
+			rows.add(new Menu.Row(shortName(category)).color(category.color).on(category.enabled)
+				.detail(Format.compact(count)).help(about(category))
+				.click(() -> {
+					category.enabled = !category.enabled;
+					BlockRadarClient.SCANNER.setFocus(null);
+				}));
+		}
+		rows.add(new Menu.Row("Pick blocks...").help("Choose any blocks to look for")
+			.click(() -> this.minecraft.setScreen(new BlockPickerScreen(this))));
+	}
+
+	private void renderRows(List<Menu.Row> rows) {
+		rows.add(new Menu.Row("Radar").on(Settings.radarOn).help("Turns everything on or off (K)")
+			.click(() -> {
+				Settings.radarOn = !Settings.radarOn;
+				BlockRadarClient.SCANNER.clear();
+			}));
+
+		boolean boxes = EXPANDED.contains("outlines");
+		rows.add(new Menu.Row("Block ESP").on(Settings.outlines).help("Boxes around highlighted blocks")
+			.click(() -> Settings.outlines = !Settings.outlines)
+			.more(boxes, () -> expand("outlines")));
+		if (boxes) {
+			rows.add(new Menu.Row("Fill").setting().on(Settings.fill).detail(onOff(Settings.fill))
+				.help("Tint the inside of each box (off is faster)")
+				.click(() -> Settings.fill = !Settings.fill));
+			rows.add(new Menu.Row("Max").setting().help("Most boxes drawn, nearest first (fewer is faster)")
+				.slider(new Menu.Slider(() -> Settings.maxOutlines, v -> Settings.maxOutlines = v, 100, 2000, 50)));
+		}
+
+		boolean columns = EXPANDED.contains("chunks");
+		rows.add(new Menu.Row("Chunks").on(Settings.chunks != ChunkStyle.OFF).color(BlockRadarClient.CHUNK_BLUE)
+			.detail(Settings.chunks.name()).help("Blue chunks: solid, lines or off")
+			.click(() -> Settings.chunks = Settings.chunks.next())
+			.more(columns, () -> expand("chunks")));
+		if (columns) {
+			rows.add(new Menu.Row("Max").setting().help("Most chunks drawn, nearest first (fewer is faster)")
+				.slider(new Menu.Slider(() -> Settings.maxChunks, v -> Settings.maxChunks = v, 8, 256, 8)));
+		}
+
+		rows.add(new Menu.Row("HUD").on(Settings.hud).help("Counts and FPS in the top left while playing")
+			.click(() -> Settings.hud = !Settings.hud));
+		rows.add(new Menu.Row("Click hints").on(Settings.hints).help("The \"left click to see\" message")
+			.click(() -> Settings.hints = !Settings.hints));
+	}
+
+	private void settings(List<Menu.Row> rows) {
+		Preset preset = Preset.current();
+		rows.add(new Menu.Row("Preset").detail(preset == null ? "Custom" : preset.label)
+			.help("Max FPS, Balanced or Quality")
+			.click(() -> (preset == null ? Preset.BALANCED
+				: Preset.values()[(preset.ordinal() + 1) % Preset.values().length]).apply()));
+		rows.add(new Menu.Row("Scan").detail(" ms").help("Scan time per tick (lower is smoother)")
+			.slider(new Menu.Slider(() -> Settings.scanMillis, v -> Settings.scanMillis = v, 1, 8, 1)));
+		rows.add(new Menu.Row("Rescan").detail(" s").help("Pause between scans (higher is faster)")
+			.slider(new Menu.Slider(() -> Settings.rescanSeconds, v -> Settings.rescanSeconds = v, 1, 15, 1)));
+		rows.add(new Menu.Row("Color").detail(Settings.accent.label).color(Settings.accent.color)
+			.help("Menu color").click(() -> Settings.accent = Settings.accent.next()));
+		rows.add(new Menu.Row("Reset layout").help("Put the panels back where they started")
+			.click(this::resetLayout));
+	}
+
+	private void results(List<Menu.Row> rows) {
+		double share = (double) stats.suspicious() / Math.max(1, stats.blocks());
+		rows.add(new Menu.Row("Suspicious").detail(Format.compact(stats.suspicious()))
+			.help("Blocks flagged by the radar's own rules"));
+		rows.add(new Menu.Row("Of all blocks").detail(Format.percent(stats.suspicious(), stats.blocks()))
+			.bar(share).help("Share of all scanned blocks"));
+
+		Block focus = BlockRadarClient.SCANNER.focus();
+		rows.add(new Menu.Row("All blocks").on(focus == null).detail(Format.compact(stats.highlighted()))
+			.help("Show every highlighted block")
+			.click(() -> BlockRadarClient.SCANNER.setFocus(null)));
+		for (Map.Entry<Block, Integer> entry : stats.byBlock()) {
+			Block block = entry.getKey();
+			int count = entry.getValue();
+			rows.add(new Menu.Row(block.getName().getString()).on(focus == block)
+				.color(stats.colors().getOrDefault(block, Theme.accent()))
+				.detail(Format.compact(count))
+				.bar((double) count / Math.max(1, stats.highlighted()))
+				.help(Format.count(count) + " found, " + Format.percent(count, stats.highlighted())
+					+ " of highlighted. Click to show only this.")
+				.click(() -> BlockRadarClient.SCANNER.setFocus(block)));
+		}
+	}
+
+	private static String onOff(boolean on) {
+		return on ? "ON" : "OFF";
+	}
+
+	private static void expand(String name) {
+		if (!EXPANDED.remove(name)) EXPANDED.add(name);
+	}
+
+	private void resetLayout() {
+		for (int i = 0; i < Settings.panelOpen.length; i++) {
+			Settings.panelX[i] = -1;
+			Settings.panelY[i] = -1;
+			Settings.panelOpen[i] = true;
+		}
+		menu = null;
+		init();
+	}
+
+	@Override
+	public void fold(Menu.Panel panel) {
+		panel.open = !panel.open;
+		Settings.panelOpen[panel.id] = panel.open;
+		BlockRadarClient.saveSettings();
+	}
+
+	@Override
+	public void moved(Menu.Panel panel) {
+		Settings.panelX[panel.id] = panel.x;
+		Settings.panelY[panel.id] = panel.y;
+		BlockRadarClient.saveSettings();
+	}
+
+	@Override
+	public void changed() {
+		BlockRadarClient.saveSettings();
+		BlockRadarClient.SCANNER.refresh();
 		stats = BlockRadarClient.SCANNER.stats();
-		rebuildWidgets();
+		fill();
+	}
+
+	@Override
+	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+		return menu.press(event.x(), event.y(), event.button()) || super.mouseClicked(event, doubleClick);
+	}
+
+	@Override
+	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+		return menu.drag(event.x(), event.y()) || super.mouseDragged(event, dragX, dragY);
+	}
+
+	@Override
+	public boolean mouseReleased(MouseButtonEvent event) {
+		return menu.release() || super.mouseReleased(event);
 	}
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-		int x = contentX();
-		if (mouseX >= x && mouseX <= x + contentWidth() && mouseY >= bodyTop() && vertical != 0) {
-			int next = Math.max(0, Math.min(maxScroll, scroll - (int) Math.signum(vertical)));
-			if (next != scroll) {
-				scroll = next;
-				rebuildWidgets();
-			}
-			return true;
-		}
-		return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+		return menu.scroll(mouseX, mouseY, vertical)
+			|| super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
 	}
 
 	@Override
 	public void tick() {
-		if (searchDirty) {
-			searchDirty = false;
-			if (!searchQuery.equals(pendingSearchQuery)) {
-				searchQuery = pendingSearchQuery;
-				scroll = 0;
-				rebuildWidgets();
-				if (searchBox != null) searchBox.setFocused(true);
-			}
-		}
-		if (++ticks % 10 == 0) {
-			stats = BlockRadarClient.SCANNER.stats();
-			boolean searchFocused = searchBox != null && searchBox.isFocused();
-			rebuildWidgets();
-			if (searchFocused && searchBox != null) searchBox.setFocused(true);
-		}
+		// Keep the numbers up to date.
+		if (++ticks % 10 != 0) return;
+		stats = BlockRadarClient.SCANNER.stats();
+		fill();
 	}
 
 	@Override
 	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-		super.renderBackground(graphics, mouseX, mouseY, delta);
-		int x = left();
-		int y = top();
-		int w = panelWidth();
-		int h = panelHeight();
-		Theme.box(graphics, x, y, w, h, Theme.PANEL);
-		Theme.outline(graphics, x, y, w, h, 0x99647583);
-		Theme.box(graphics, x + 10, y + 10, 180, h - 20, Theme.CARD);
-		Theme.box(graphics, x + 198, y + 10, w - 208, h - 20, Theme.CARD);
-		graphics.fill(x + 14, y + 3, x + w - 14, y + 4, Theme.ACCENT);
+		// A plain dim instead of the game's blur, which costs frames.
+		graphics.fill(0, 0, this.width, this.height, Theme.DIM);
 	}
 
 	@Override
 	public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		super.render(graphics, mouseX, mouseY, delta);
-		int panelLeft = left();
-		int panelTop = top();
-		int width = panelWidth();
-		int mainX = contentX();
-		Theme.text(graphics, font, "BLOCK RADAR", panelLeft + 24, panelTop + 18, Theme.TEXT);
-		Theme.text(graphics, font, "MODULES", panelLeft + 24, panelTop + 43, Theme.MUTED);
-		String heading = selectedCategory.label + " Modules";
-		Theme.text(graphics, font, font.plainSubstrByWidth(heading, Math.max(20, width - 550)),
-			mainX, panelTop + 20, selectedCategory.color);
-		Theme.text(graphics, font, "Click a card to focus its block outlines; toggle it again to clear the filter.",
-			mainX, panelTop + 48, Theme.MUTED);
-		Theme.pill(graphics, font, Format.count(stats.suspicious()) + " MATCHES", mainX, panelTop + 78,
-			116, 0xFF243342);
-		Theme.pill(graphics, font, stats.suspiciousChunks() + " CHUNKS", mainX + 124, panelTop + 78,
-			112, 0xFF243342);
-		Theme.pill(graphics, font, Settings.scanRange + " CHUNK RANGE", mainX + 244, panelTop + 78,
-			140, 0xFF243342);
-		Theme.text(graphics, font, "SCAN RANGE", navX(), bodyTop() + 31, Theme.MUTED);
-		Theme.text(graphics, font, "BLOCK CATEGORIES", navX(), bodyTop() + 75, Theme.MUTED);
-		String focus = "FILTER  ·  " + (BlockRadarClient.SCANNER.focus() == null ? "All highlighted blocks"
-			: BlockRadarClient.SCANNER.focus().getName().getString());
-		Theme.text(graphics, font, font.plainSubstrByWidth(focus, width - 170), panelLeft + 22,
-			panelTop + panelHeight() - 25, Theme.MUTED);
-		if (selectedCategory.enabled && categoryBlocks().isEmpty()) {
-			Theme.text(graphics, font, searchQuery.isEmpty() ? "No matches in this category yet."
-				: "No blocks match this search.", mainX + 12, bodyTop() + 48, Theme.MUTED);
-		} else if (!selectedCategory.enabled) {
-			Theme.text(graphics, font, "This category is disabled.", mainX + 12, bodyTop() + 48, Theme.MUTED);
+		Menu.Panel over = menu.panelAt(mouseX, mouseY);
+		Menu.Row hovered = menu.rowAt(over, mouseY);
+		for (Menu.Panel panel : menu.panels) draw(graphics, panel, hovered);
+
+		String help = hovered != null && !hovered.help.isEmpty() ? hovered.help
+			: "Left click: use  •  Right click: settings  •  Drag titles to move";
+		Theme.centered(graphics, this.font, help, this.width / 2, this.height - 11, Theme.MUTED);
+	}
+
+	private void draw(GuiGraphics g, Menu.Panel panel, Menu.Row hovered) {
+		int x = panel.x;
+		int y = panel.y;
+		int w = panel.width;
+		int height = panel.height(this.height);
+		int accent = Theme.accent();
+
+		g.fill(x + 2, y + 2, x + w + 2, y + height + 3, Theme.SHADOW);
+		g.fill(x, y, x + w, y + height + 1, Theme.PANEL);
+		g.fill(x, y, x + w, y + Menu.HEADER, Theme.HEADER);
+		g.fill(x, y, x + w, y + 2, accent);
+		Theme.centered(g, this.font, panel.title, x + w / 2, y + 6, Theme.TEXT);
+		Theme.text(g, this.font, panel.open ? "-" : "+", x + w - 10, y + 6, Theme.MUTED);
+
+		int first = panel.firstRow(this.height);
+		for (int i = 0; i < panel.visibleRows(this.height); i++) {
+			Menu.Row row = panel.rows.get(first + i);
+			drawRow(g, row, x, y + Menu.HEADER + i * Menu.ROW, w, row == hovered);
+		}
+	}
+
+	private void drawRow(GuiGraphics g, Menu.Row row, int x, int y, int w, boolean hover) {
+		int accent = Theme.accent();
+		if (row.setting) g.fill(x, y, x + w, y + Menu.ROW, Theme.SETTING);
+		if (hover) g.fill(x, y, x + w, y + Menu.ROW, Theme.ROW_HOVER);
+		if (row.on && !row.setting) {
+			g.fill(x, y, x + w, y + Menu.ROW, Theme.alpha(accent, 0x2E));
+			g.fill(x, y, x + 2, y + Menu.ROW, accent);
+		}
+
+		int left = x + (row.setting ? 12 : 7);
+		if (row.color != 0) {
+			g.fill(left, y + 6, left + 3, y + 9, row.color);
+			left += 6;
+		}
+
+		int right = x + w - 5;
+		if (row.more != null) {
+			Theme.text(g, this.font, row.expanded ? "-" : "+", right - 5, y + 4, Theme.MUTED);
+			right -= 11;
+		}
+		String detail = row.slider != null ? row.slider.get().getAsInt() + row.detail : row.detail;
+		if (!detail.isEmpty()) {
+			right -= this.font.width(detail);
+			Theme.text(g, this.font, detail, right, y + 4, row.setting && row.on ? accent : Theme.MUTED);
+			right -= 3;
+		}
+
+		String label = this.font.plainSubstrByWidth(row.label, Math.max(0, right - left));
+		Theme.text(g, this.font, label, left, y + 4, row.on || hover ? Theme.TEXT : Theme.MUTED);
+
+		int track = w - 2 * Menu.SLIDER_PAD;
+		if (row.slider != null) {
+			Theme.bar(g, x + Menu.SLIDER_PAD, y + Menu.ROW - 2, track, row.slider.share(), accent);
+		} else if (row.bar >= 0) {
+			Theme.bar(g, x + Menu.SLIDER_PAD, y + Menu.ROW - 2, track, row.bar,
+				row.color != 0 ? row.color : accent);
 		}
 	}
 
 	@Override
 	public boolean isPauseScreen() {
-		return false;
+		return false; // keep scanning while the menu is open
 	}
 }

@@ -3,7 +3,7 @@
   "id": "blockradar",
   "version": "${version}",
   "name": "Block Radar",
-  "description": "Configurable Base Finder with block watch list, activity HUD, and suspicious chunk outlines.",
+  "description": "Highlights redstone blocks and out-of-place blocks in loaded chunks.",
   "environment": "client",
   "entrypoints": { "client": ["blockradar.BlockRadarClient"] },
   "depends": {

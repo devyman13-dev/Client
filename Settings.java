@@ -6,24 +6,41 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.Properties;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
-import java.util.TreeSet;
 
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.level.block.Block;
 /** Everything the player can change in the menu, kept in a small text file. */
 public final class Settings {
 	private Settings() {}
 
 	public static boolean radarOn = true;
-	public static int scanRange = 8;
-	private static final Set<String> DEFAULT_BLOCKS = defaultBlocks();
-	public static final Set<String> selectedBlocks = new HashSet<>(DEFAULT_BLOCKS);
+	/** Boxes around highlighted blocks, and whether they are tinted inside. */
+	public static boolean outlines = true;
+	public static boolean fill = true;
+	/** The small overlay shown while playing. */
+	public static boolean hud = true;
+	/** The "left click to see" message. */
+	public static boolean hints = true;
+	/** How chunks with highlighted blocks are shown. */
+	public static ChunkStyle chunks = ChunkStyle.SOLID;
+	public static Accent accent = Accent.BLUE;
+
+	/** Performance: the most boxes and chunks drawn, nearest first. */
+	public static int maxOutlines = 600;
+	public static int maxChunks = 64;
+	/** Performance: time spent scanning per game tick, and the pause between full scans. */
+	public static int scanMillis = 2;
+	public static int rescanSeconds = 3;
+
 	/** Full name of the only block to show, such as "minecraft:piston". Empty means all. */
 	public static String onlyBlock = "";
+	/** Full names of the blocks chosen in the block list. */
+	public static final Set<String> picked = new LinkedHashSet<>();
+	/** Menu panel positions (-1 means not moved yet) and whether each panel is unfolded. */
+	public static final int[] panelX = {-1, -1, -1, -1};
+	public static final int[] panelY = {-1, -1, -1, -1};
+	public static final boolean[] panelOpen = {true, true, true, true};
 
 	/** Reads the file. Anything missing or unreadable keeps its current value. */
 	public static void load(Path file) {
@@ -36,31 +53,58 @@ public final class Settings {
 			return;
 		}
 		radarOn = flag(saved, "radar", radarOn);
-		scanRange = Math.max(2, Math.min(32, integer(saved, "scanRange", scanRange)));
-		String blockList = saved.getProperty("selectedBlocks");
-		if (blockList != null) {
-			selectedBlocks.clear();
-			for (String id : blockList.split(",")) {
-				String cleaned = id.trim();
-				String path = cleaned.substring(cleaned.lastIndexOf(':') + 1);
-				if (!cleaned.isEmpty() && !path.contains("copper") && !path.equals("netherrack")
-						&& !path.equals("reinforced_deepslate")) selectedBlocks.add(cleaned);
-			}
+		outlines = flag(saved, "outlines", outlines);
+		fill = flag(saved, "fill", fill);
+		hud = flag(saved, "hud", hud);
+		hints = flag(saved, "hints", hints);
+		for (ChunkStyle style : ChunkStyle.values()) {
+			if (style.name().equals(saved.getProperty("chunks", "").trim())) chunks = style;
 		}
+		for (Accent value : Accent.values()) {
+			if (value.name().equals(saved.getProperty("accent", "").trim())) accent = value;
+		}
+		maxOutlines = ranged(saved, "maxOutlines", maxOutlines, 100, 2000);
+		maxChunks = ranged(saved, "maxChunks", maxChunks, 8, 256);
+		scanMillis = ranged(saved, "scanMillis", scanMillis, 1, 8);
+		rescanSeconds = ranged(saved, "rescanSeconds", rescanSeconds, 1, 15);
 		onlyBlock = saved.getProperty("onlyBlock", onlyBlock).trim();
+		String chosen = saved.getProperty("picked");
+		if (chosen != null) {
+			picked.clear();
+			for (String id : chosen.split(",")) if (!id.isBlank()) picked.add(id.trim());
+		}
 		for (Category category : Category.values()) {
 			category.enabled = flag(saved, "category." + category.name(), category.enabled);
+		}
+		for (int i = 0; i < panelOpen.length; i++) {
+			panelX[i] = number(saved, "gui." + i + ".x", panelX[i]);
+			panelY[i] = number(saved, "gui." + i + ".y", panelY[i]);
+			panelOpen[i] = flag(saved, "gui." + i + ".open", panelOpen[i]);
 		}
 	}
 
 	public static void save(Path file) {
 		Properties saved = new Properties();
 		saved.setProperty("radar", Boolean.toString(radarOn));
-		saved.setProperty("scanRange", Integer.toString(scanRange));
-		saved.setProperty("selectedBlocks", String.join(",", new TreeSet<>(selectedBlocks)));
+		saved.setProperty("outlines", Boolean.toString(outlines));
+		saved.setProperty("fill", Boolean.toString(fill));
+		saved.setProperty("hud", Boolean.toString(hud));
+		saved.setProperty("hints", Boolean.toString(hints));
+		saved.setProperty("chunks", chunks.name());
+		saved.setProperty("accent", accent.name());
+		saved.setProperty("maxOutlines", Integer.toString(maxOutlines));
+		saved.setProperty("maxChunks", Integer.toString(maxChunks));
+		saved.setProperty("scanMillis", Integer.toString(scanMillis));
+		saved.setProperty("rescanSeconds", Integer.toString(rescanSeconds));
 		saved.setProperty("onlyBlock", onlyBlock);
+		saved.setProperty("picked", String.join(",", picked));
 		for (Category category : Category.values()) {
 			saved.setProperty("category." + category.name(), Boolean.toString(category.enabled));
+		}
+		for (int i = 0; i < panelOpen.length; i++) {
+			saved.setProperty("gui." + i + ".x", Integer.toString(panelX[i]));
+			saved.setProperty("gui." + i + ".y", Integer.toString(panelY[i]));
+			saved.setProperty("gui." + i + ".open", Boolean.toString(panelOpen[i]));
 		}
 		try {
 			Files.createDirectories(file.toAbsolutePath().getParent());
@@ -72,49 +116,22 @@ public final class Settings {
 		}
 	}
 
-	private static boolean flag(Properties saved, String key, boolean fallback) {
-		String value = saved.getProperty(key, "").trim();
-		if (value.equals("true")) return true;
-		if (value.equals("false")) return false;
-		return fallback;
-	}
-
-	private static int integer(Properties saved, String key, int fallback) {
+	private static int number(Properties saved, String key, int fallback) {
 		try {
-			return Integer.parseInt(saved.getProperty(key, Integer.toString(fallback)).trim());
+			return Integer.parseInt(saved.getProperty(key, "").trim());
 		} catch (NumberFormatException e) {
 			return fallback;
 		}
 	}
 
-	public static boolean blockSelected(Block block) {
-		var id = BuiltInRegistries.BLOCK.getKey(block);
-		return selectedBlocks.contains(id.toString())
-			|| (id.getNamespace().equals("minecraft") && selectedBlocks.contains(id.getPath()));
+	private static int ranged(Properties saved, String key, int fallback, int min, int max) {
+		return Math.max(min, Math.min(max, number(saved, key, fallback)));
 	}
 
-	public static void setBlockSelected(Block block, boolean selected) {
-		var id = BuiltInRegistries.BLOCK.getKey(block);
-		String key = id.getNamespace().equals("minecraft") ? id.getPath() : id.toString();
-		if (selected) selectedBlocks.add(key);
-		else selectedBlocks.remove(key);
-	}
-
-	private static Set<String> defaultBlocks() {
-		Set<String> result = new HashSet<>(Set.of(
-			"redstone_wire", "redstone_torch", "redstone_wall_torch", "redstone_block",
-			"repeater", "comparator", "observer", "piston", "sticky_piston",
-			"dispenser", "dropper", "hopper", "lever", "target", "crafter",
-			"tripwire", "tripwire_hook", "chest", "trapped_chest", "barrel", "ender_chest",
-			"furnace", "blast_furnace", "smoker", "crafting_table", "enchanting_table",
-			"beacon", "conduit", "respawn_anchor", "lodestone", "anvil", "chipped_anvil",
-			"damaged_anvil", "brewing_stand", "stonecutter", "smithing_table", "grindstone", "loom"
-		));
-		result.add("shulker_box");
-		for (String color : List.of("white", "orange", "magenta", "light_blue", "yellow", "lime",
-			"pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black")) {
-			result.add(color + "_shulker_box");
-		}
-		return result;
+	private static boolean flag(Properties saved, String key, boolean fallback) {
+		String value = saved.getProperty(key, "").trim();
+		if (value.equals("true")) return true;
+		if (value.equals("false")) return false;
+		return fallback;
 	}
 }

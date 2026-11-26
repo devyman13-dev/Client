@@ -1,5 +1,6 @@
 {
   "key.category.blockradar.main": "Block Radar",
   "key.blockradar.menu": "Open radar menu",
-  "key.blockradar.toggle": "Turn radar on/off"
+  "key.blockradar.toggle": "Turn radar on/off",
+  "key.blockradar.chunk": "List blocks in your chunk"
 }

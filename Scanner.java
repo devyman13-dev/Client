@@ -26,37 +26,79 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /** Walks the loaded chunks a few at a time so the game does not freeze. */
 public final class Scanner {
-	public record Hit(BlockPos pos, Block block, Category category) {}
+	/** One kind of highlighted block. "rule" is null if only the player's choice flags it. */
+	public record Key(Block block, Category rule, boolean picked) {
+		/** The category it shows under right now, or null if it is switched off. */
+		public Category shown() { return Picks.shown(rule, picked); }
+	}
+	public record Hit(BlockPos pos, Key key, int color) {
+		public Block block() { return key.block(); }
+		public Category category() {
+			Category shown = key.shown();
+			return shown != null ? shown : Category.PICKED;
+		}
+	}
+	/** A chunk position (block position divided by 16). */
+	public record Chunk(int x, int z) {}
+	/** One highlighted block type in a chunk. */
+	public record Row(Block block, int count, int color) {}
+	/** The highlighted blocks of one chunk, most common first. */
+	public record ChunkReport(Chunk chunk, List<Row> rows, int total) {}
+	/** Size of a touching group. "partial" means there may be more than "size". */
+	public record Group(int size, boolean partial) {}
 
-	private static final long TIME_BUDGET_NANOS = 4_000_000L; // 4 ms per tick
-	private static final int MAX_DRAWN = 2000;
+	/** Most positions remembered per chunk for one kind of block. Counts are never limited. */
+	private static final int MAX_KEPT_FLAGGED = 4096;
+	private static final int MAX_KEPT_PICKED = 256;
 
-	private record ChunkData(List<Hit> hits, int blocks) {}
-	private record Rule(Category category, boolean dependsOnPlace) {
-		/** False if this block can never be highlighted in this dimension. */
-		boolean possible() { return category != null || dependsOnPlace; }
+	/** How many of one kind a chunk holds, and where (some of) them are. */
+	private static final class Tally {
+		int count;
+		final List<Hit> hits = new ArrayList<>();
+	}
+	private record ChunkData(Map<Key, Tally> tallies, int blocks) {}
+	private record Rule(Category category, boolean dependsOnHeight, int color, boolean picked, int mapColor) {
+		/** False if this block can never be highlighted by the selected rules. */
+		boolean possible() { return picked || category != null || dependsOnHeight; }
 	}
 
-	/** Totals for the menu. "blocks" is every non-air block scanned. */
-	public record Stats(long blocks, long suspicious, long suspiciousChunks, List<Map.Entry<Block, Integer>> byBlock,
-		Map<Category, Integer> byCategory, Map<Block, Category> blockCategories) {}
+	/**
+	 * Totals for the menu. "blocks" is every non-air block scanned, "suspicious" is what the
+	 * radar's own rules flagged, and "highlighted" also includes the player's chosen blocks.
+	 */
+	public record Stats(long blocks, long suspicious, long highlighted,
+		List<Map.Entry<Block, Integer>> byBlock, Map<Category, Integer> byCategory,
+		Map<Block, Integer> colors) {}
 
 	private final Map<Long, ChunkData> chunks = new HashMap<>();
 	private final ArrayDeque<int[]> queue = new ArrayDeque<>();
-	/** Rules result per block for the current dimension, so each block is only checked once. */
+	/** Rules result per block, so each block is only checked once. */
 	private final Map<Block, Rule> known = new IdentityHashMap<>();
 	private ClientLevel level;
 	private List<Hit> drawn = List.of();
-	private Set<Long> drawnChunks = Set.of();
-	private volatile Stats cachedStats = new Stats(0, 0, 0, List.of(), Map.of(), Map.of());
+	/** The same hits looked up by position. */
+	private Map<BlockPos, Hit> drawnAt = Map.of();
+	/** The nearest chunks holding at least one highlighted block. */
+	private List<Chunk> marked = List.of();
+	/** Whether a full scan is under way, the pause left before the next, and where the last began. */
+	private boolean sweeping;
+	private int rest;
+	private int sweptX;
+	private int sweptZ;
 	private int ticks;
 
 	/** If set, only this block type is highlighted. */
 	private Block focus;
 
 	public List<Hit> drawn() { return drawn; }
-	public Set<Long> drawnChunks() { return drawnChunks; }
-	public Stats cachedStats() { return cachedStats; }
+	public List<Chunk> marked() { return marked; }
+	/** The drawn hit at this position, or null. */
+	public Hit drawnAt(BlockPos pos) { return drawnAt.get(pos); }
+
+	/** Picks what to draw again, after a setting changed. */
+	public void refresh() {
+		refreshDrawn(Minecraft.getInstance().player);
+	}
 	public Block focus() { return focus; }
 
 	/** Brings back the block that was selected last time the game ran. */
@@ -77,8 +119,16 @@ public final class Scanner {
 		chunks.clear();
 		queue.clear();
 		drawn = List.of();
-		drawnChunks = Set.of();
-		cachedStats = new Stats(0, 0, 0, List.of(), Map.of(), Map.of());
+		drawnAt = Map.of();
+		marked = List.of();
+		sweeping = false;
+		rest = 0; // scan again right away
+	}
+
+	/** Starts over, for when the chosen blocks change. */
+	public void rescan() {
+		known.clear();
+		clear();
 	}
 
 	public void tick(Minecraft client) {
@@ -94,22 +144,28 @@ public final class Scanner {
 			clear();
 		}
 
-		if (queue.isEmpty()) startSweep(client, player);
+		if (!sweeping) {
+			// Between scans the radar rests, unless the player has reached a new chunk.
+			boolean movedOn = player.getBlockX() >> 4 != sweptX || player.getBlockZ() >> 4 != sweptZ;
+			if (rest <= 0 || movedOn) startSweep(client, player);
+			else rest--;
+		}
 
-		long deadline = System.nanoTime() + TIME_BUDGET_NANOS;
+		long deadline = System.nanoTime() + Settings.scanMillis * 1_000_000L;
 		while (!queue.isEmpty() && System.nanoTime() < deadline) {
 			int[] next = queue.poll();
-			scanChunk(next[0], next[1]);
+			scanChunk(next[0], next[1], player.getBlockY());
+		}
+		if (sweeping && queue.isEmpty()) {
+			sweeping = false;
+			rest = Settings.rescanSeconds * 20;
 		}
 
-		if (++ticks % 10 == 0) {
-			refreshDrawn(player);
-			cachedStats = stats();
-		}
+		if (++ticks % 10 == 0) refreshDrawn(player);
 	}
 
 	private void startSweep(Minecraft client, LocalPlayer player) {
-		int radius = Math.min(Settings.scanRange, client.options.getEffectiveRenderDistance());
+		int radius = client.options.getEffectiveRenderDistance();
 		int px = player.getBlockX() >> 4;
 		int pz = player.getBlockZ() >> 4;
 
@@ -125,6 +181,9 @@ public final class Scanner {
 		for (int x = px - radius; x <= px + radius; x++) {
 			for (int z = pz - radius; z <= pz + radius; z++) order.add(new int[] {x, z});
 		}
+		sweeping = true;
+		sweptX = px;
+		sweptZ = pz;
 		// Nearest chunks first.
 		order.sort(Comparator.comparingInt(c -> (c[0] - px) * (c[0] - px) + (c[1] - pz) * (c[1] - pz)));
 		queue.addAll(order);
@@ -134,19 +193,25 @@ public final class Scanner {
 		return id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id;
 	}
 
-	private static String blockName(Block block) {
-		return path(BuiltInRegistries.BLOCK.getKey(block).toString());
-	}
-
-	/** What the rules say about a block before looking at where it is. */
-	private Rule rule(Block block, String dimension) {
+	/** What the rules say about a block before checking its height, when relevant. */
+	private Rule rule(Block block) {
 		return known.computeIfAbsent(block, b -> {
-			String name = blockName(b);
-			return new Rule(Rules.classify(name, dimension, "", Integer.MAX_VALUE), Rules.dependsOnPlace(name));
+			String id = BuiltInRegistries.BLOCK.getKey(b).toString();
+			String name = path(id);
+			boolean picked = Settings.picked.contains(id) && Picks.allowed(name);
+			return new Rule(Rules.classify(name, "", "", Integer.MAX_VALUE), Rules.dependsOnHeight(name),
+				Colors.of(name), picked, b.defaultMapColor().col);
 		});
 	}
 
-	private void scanChunk(int chunkX, int chunkZ) {
+	/** The block's own color, else its category's, else the color it has on maps. */
+	private static int color(Rule rule, Category category) {
+		if (rule.color() != 0) return rule.color();
+		if (category != null) return category.color;
+		return rule.mapColor() != 0 ? 0xFF000000 | rule.mapColor() : Category.PICKED.color;
+	}
+
+	private void scanChunk(int chunkX, int chunkZ, int playerY) {
 		long key = ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
 		ChunkAccess access = level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
 		if (!(access instanceof LevelChunk chunk)) {
@@ -154,104 +219,168 @@ public final class Scanner {
 			return;
 		}
 
-		String dimension = path(level.dimension().identifier().toString());
-		List<Hit> hits = new ArrayList<>();
+		Map<Key, Tally> tallies = new HashMap<>();
 		int[] blocks = {0};
 		LevelChunkSection[] sections = chunk.getSections();
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
-		for (int i = 0; i < sections.length; i++) {
+		// Sections near the player's height come first, so limited positions are the useful ones.
+		List<Integer> order = new ArrayList<>();
+		for (int i = 0; i < sections.length; i++) order.add(i);
+		order.sort(Comparator.comparingInt(
+			i -> Math.abs((chunk.getSectionYFromSectionIndex(i) << 4) + 8 - playerY)));
+
+		// The last kind seen, so long runs of one block stay fast.
+		Key lastKey = null;
+		Tally lastTally = null;
+
+		for (int i : order) {
 			LevelChunkSection section = sections[i];
 			if (section.hasOnlyAir()) continue;
 			section.getStates().count((state, count) -> {
 				if (!state.isAir()) blocks[0] += count;
 			});
-			if (!section.maybeHas(state -> rule(state.getBlock(), dimension).possible())) continue;
+			if (!section.maybeHas(state -> rule(state.getBlock()).possible())) continue;
 			int baseY = chunk.getSectionYFromSectionIndex(i) << 4;
 
 			for (int y = 0; y < 16; y++) {
 				for (int z = 0; z < 16; z++) {
 					for (int x = 0; x < 16; x++) {
 						BlockState state = section.getBlockState(x, y, z);
-						Rule rule = rule(state.getBlock(), dimension);
+						Block block = state.getBlock();
+						Rule rule = rule(block);
 						if (!rule.possible()) continue;
 						Category category = rule.category();
 						pos.set((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
-						// The biome is only looked up for blocks that depend on it.
-						if (rule.dependsOnPlace()) {
-							String biome = path(level.getBiome(pos).getRegisteredName());
-							category = Rules.classify(blockName(state.getBlock()), dimension, biome, pos.getY());
+						if (rule.dependsOnHeight()) {
+							category = Rules.classify(path(BuiltInRegistries.BLOCK.getKey(block).toString()), "", "", pos.getY());
 						}
-						if (category != null) hits.add(new Hit(pos.immutable(), state.getBlock(), category));
+						if (category == null && !rule.picked()) continue;
+
+						if (lastKey == null || lastKey.block() != block || lastKey.rule() != category) {
+							lastKey = new Key(block, category, rule.picked());
+							lastTally = tallies.computeIfAbsent(lastKey, k -> new Tally());
+						}
+						lastTally.count++;
+						int limit = category != null ? MAX_KEPT_FLAGGED : MAX_KEPT_PICKED;
+						if (lastTally.hits.size() < limit) {
+							lastTally.hits.add(new Hit(pos.immutable(), lastKey, color(rule, category)));
+						}
 					}
 				}
 			}
 		}
 
-		chunks.put(key, new ChunkData(hits, blocks[0]));
+		chunks.put(key, new ChunkData(tallies, blocks[0]));
 	}
 
-	private boolean visible(Hit hit) {
-		return hit.category().enabled && Settings.blockSelected(hit.block())
-			&& (focus == null || hit.block() == focus);
+	private boolean visible(Key key) {
+		return key.shown() != null && (focus == null || key.block() == focus);
 	}
 
-	/** Picks the nearest hits to draw. Counting always uses every hit. */
+	/** Picks the nearest hits to draw. Counting always uses every block. */
 	private void refreshDrawn(LocalPlayer player) {
 		if (player == null) return;
 		BlockPos here = player.blockPosition();
+		int px = here.getX() >> 4;
+		int pz = here.getZ() >> 4;
+		List<Long> nearest = new ArrayList<>(chunks.keySet());
+		nearest.sort(Comparator.comparingLong(k -> {
+			long dx = (int) (k >> 32) - px;
+			long dz = (int) k.longValue() - pz;
+			return dx * dx + dz * dz;
+		}));
+
 		List<Hit> all = new ArrayList<>();
-		Set<Long> visibleChunks = new HashSet<>();
-		for (Map.Entry<Long, ChunkData> entry : chunks.entrySet()) {
-			for (Hit hit : entry.getValue().hits()) {
-				if (visible(hit)) {
-					all.add(hit);
-					visibleChunks.add(entry.getKey());
-				}
+		List<Chunk> found = new ArrayList<>();
+		for (long key : nearest) {
+			// Far chunks cannot make the cut once there are plenty of closer hits.
+			boolean room = all.size() < Settings.maxOutlines * 4;
+			boolean any = false;
+			for (Map.Entry<Key, Tally> entry : chunks.get(key).tallies().entrySet()) {
+				if (!visible(entry.getKey())) continue;
+				any = true;
+				if (room) all.addAll(entry.getValue().hits);
 			}
+			if (any) found.add(new Chunk((int) (key >> 32), (int) key));
 		}
-		if (all.size() > MAX_DRAWN) {
+		// "found" is already nearest first.
+		marked = found.size() > Settings.maxChunks
+			? new ArrayList<>(found.subList(0, Settings.maxChunks)) : found;
+		if (all.size() > Settings.maxOutlines) {
 			all.sort(Comparator.comparingDouble(h -> h.pos().distSqr(here)));
-			all = new ArrayList<>(all.subList(0, MAX_DRAWN));
+			all = new ArrayList<>(all.subList(0, Settings.maxOutlines));
 		}
 		drawn = all;
-		drawnChunks = Set.copyOf(visibleChunks);
+		Map<BlockPos, Hit> at = new HashMap<>();
+		for (Hit hit : all) at.put(hit.pos(), hit);
+		drawnAt = at;
 	}
 
 	/** Counts everything scanned so far. Block types are listed biggest first. */
 	public Stats stats() {
 		long blocks = 0;
 		long suspicious = 0;
-		Set<Long> suspiciousChunkKeys = new HashSet<>();
+		long highlighted = 0;
 		Map<Block, Integer> counts = new HashMap<>();
 		Map<Category, Integer> categories = new EnumMap<>(Category.class);
-		Map<Block, Map<Category, Integer>> categoryCounts = new HashMap<>();
-		for (Map.Entry<Long, ChunkData> chunk : chunks.entrySet()) {
-			ChunkData data = chunk.getValue();
+		Map<Block, Integer> colors = new HashMap<>();
+		for (ChunkData data : chunks.values()) {
 			blocks += data.blocks();
-			for (Hit hit : data.hits()) {
-				categories.merge(hit.category(), 1, Integer::sum);
-				counts.merge(hit.block(), 1, Integer::sum);
-				categoryCounts.computeIfAbsent(hit.block(), ignored -> new EnumMap<>(Category.class))
-					.merge(hit.category(), 1, Integer::sum);
-				if (!hit.category().enabled || !Settings.blockSelected(hit.block())) continue;
-				suspicious++;
-				suspiciousChunkKeys.add(chunk.getKey());
+			for (Map.Entry<Key, Tally> entry : data.tallies().entrySet()) {
+				Key key = entry.getKey();
+				int count = entry.getValue().count;
+				if (key.rule() != null) categories.merge(key.rule(), count, Integer::sum);
+				if (key.picked()) categories.merge(Category.PICKED, count, Integer::sum);
+				Category shown = key.shown();
+				if (shown == null) continue;
+				highlighted += count;
+				if (shown != Category.PICKED) suspicious += count;
+				counts.merge(key.block(), count, Integer::sum);
+				if (!entry.getValue().hits.isEmpty()) {
+					colors.putIfAbsent(key.block(), entry.getValue().hits.get(0).color());
+				}
 			}
 		}
 		List<Map.Entry<Block, Integer>> byBlock = new ArrayList<>(counts.entrySet());
 		byBlock.sort((a, b) -> b.getValue() - a.getValue());
-		Map<Block, Category> blockCategories = new HashMap<>();
-		categoryCounts.forEach((block, byCategory) -> blockCategories.put(block,
-			byCategory.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey()));
-		return new Stats(blocks, suspicious, suspiciousChunkKeys.size(), byBlock, categories, blockCategories);
+		return new Stats(blocks, suspicious, highlighted, byBlock, categories, colors);
+	}
+
+	/** Counts the highlighted blocks found in one chunk. Normal blocks are not listed. */
+	public ChunkReport report(Chunk where) {
+		Map<Block, Integer> counts = new HashMap<>();
+		Map<Block, Integer> colors = new HashMap<>();
+		int total = 0;
+		ChunkData data = chunks.get(((long) where.x() << 32) | (where.z() & 0xFFFFFFFFL));
+		if (data != null) {
+			for (Map.Entry<Key, Tally> entry : data.tallies().entrySet()) {
+				if (entry.getKey().shown() == null) continue;
+				Block block = entry.getKey().block();
+				Tally tally = entry.getValue();
+				total += tally.count;
+				counts.merge(block, tally.count, Integer::sum);
+				if (!tally.hits.isEmpty()) colors.putIfAbsent(block, tally.hits.get(0).color());
+			}
+		}
+
+		List<Row> rows = new ArrayList<>();
+		counts.forEach((block, count) -> rows.add(new Row(block, count,
+			colors.getOrDefault(block, Theme.accent()))));
+		rows.sort(Comparator.comparingInt((Row row) -> -row.count()));
+		return new ChunkReport(where, rows, total);
 	}
 
 	/** Size of the touching group (including diagonals) of the same block as this hit. */
-	public int clusterSize(Hit start) {
+	public Group clusterSize(Hit start) {
 		Set<BlockPos> remaining = new HashSet<>();
+		boolean partial = false;
 		for (ChunkData data : chunks.values()) {
-			for (Hit hit : data.hits()) if (hit.block() == start.block()) remaining.add(hit.pos());
+			for (Tally tally : data.tallies().values()) {
+				if (tally.hits.isEmpty() || tally.hits.get(0).block() != start.block()) continue;
+				if (tally.count > tally.hits.size()) partial = true;
+				for (Hit hit : tally.hits) remaining.add(hit.pos());
+			}
 		}
 		ArrayDeque<BlockPos> open = new ArrayDeque<>();
 		remaining.remove(start.pos());
@@ -269,12 +398,6 @@ public final class Scanner {
 				}
 			}
 		}
-		return size;
-	}
-
-	/** Rebuilds the visible outline and activity summary after block/category toggles. */
-	public void refreshVisibility() {
-		refreshDrawn(Minecraft.getInstance().player);
-		cachedStats = stats();
+		return new Group(size, partial);
 	}
 }

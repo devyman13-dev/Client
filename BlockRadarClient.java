@@ -1,7 +1,9 @@
 package blockradar;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -9,23 +11,35 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
+import net.fabricmc.fabric.api.event.client.player.ClientPreAttackCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.gizmos.GizmoStyle;
 import net.minecraft.gizmos.Gizmos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 public class BlockRadarClient implements ClientModInitializer {
 	public static final Scanner SCANNER = new Scanner();
-	private static Scanner.Hit inspectedHit;
 
-	private boolean clickWasDown;
+	/** Chunk color. */
+	static final int CHUNK_BLUE = 0xFF2F7BFF;
+	/** The "click to see" check runs once every this many ticks. */
+	private static final int HINT_TICKS = 4;
+
+	/** What a left click would open right now. */
+	private record Target(String hint, Supplier<Screen> screen) {}
+
+	private boolean hintShowing;
+	private int ticks;
 
 	private static Path settingsFile() {
 		return FabricLoader.getInstance().getConfigDir().resolve("blockradar.properties");
@@ -47,9 +61,19 @@ public class BlockRadarClient implements ClientModInitializer {
 			new KeyMapping("key.blockradar.menu", InputConstants.KEY_J, keys));
 		KeyMapping toggleKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.toggle", InputConstants.KEY_K, keys));
-		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT,
-			Identifier.fromNamespaceAndPath("blockradar", "activity_hud"),
-			(graphics, delta) -> drawActivityHud(graphics));
+		KeyMapping chunkKey = KeyBindingHelper.registerKeyBinding(
+			new KeyMapping("key.blockradar.chunk", InputConstants.KEY_N, keys));
+
+		HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("blockradar", "hud"), RadarHud::render);
+
+		// Left click. Returning true stops the game from also breaking the block.
+		ClientPreAttackCallback.EVENT.register((client, player, clickCount) -> {
+			if (clickCount == 0 || !Settings.radarOn || client.screen != null) return false;
+			Target target = target(client, player);
+			if (target == null) return false;
+			client.setScreen(target.screen().get());
+			return true;
+		});
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleKey.consumeClick()) {
@@ -60,121 +84,109 @@ public class BlockRadarClient implements ClientModInitializer {
 			while (menuKey.consumeClick()) {
 				client.setScreen(new RadarScreen());
 			}
+			while (chunkKey.consumeClick()) {
+				if (Settings.radarOn && client.player != null) {
+					Scanner.Chunk here = new Scanner.Chunk(
+						client.player.getBlockX() >> 4, client.player.getBlockZ() >> 4);
+					client.setScreen(new ChunkScreen(SCANNER.report(here)));
+				}
+			}
 			if (Settings.radarOn) SCANNER.tick(client);
 
-			// "Pick block" is middle click by default.
-			boolean clickDown = client.options.keyPickItem.isDown();
-			if (Settings.radarOn && clickDown && !clickWasDown && client.screen == null) {
-				inspect(client);
-			}
-			clickWasDown = clickDown;
-
 			if (Settings.radarOn) drawOutlines(client);
+			RadarHud.tick();
+			if (++ticks % HINT_TICKS == 0) showHint(client);
 		});
 	}
 
 	/** Outlines drawn during a tick stay on screen until the next tick. */
 	private void drawOutlines(Minecraft client) {
 		try (var collection = client.collectPerTickGizmos()) {
-			if (client.level != null) {
-				for (long key : SCANNER.drawnChunks()) {
-					drawChunkBorder(client, key);
+			if (Settings.outlines) {
+				for (Scanner.Hit hit : SCANNER.drawn()) {
+					int color = hit.color();
+					// The same color, mostly see-through, or nothing.
+					int fill = Settings.fill ? Theme.alpha(color, 0x28) : 0;
+					Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.strokeAndFill(color, 2.0F, fill))
+						.setAlwaysOnTop();
 				}
 			}
-			for (Scanner.Hit hit : SCANNER.drawn()) {
-				int color = hit.category().color;
-				int fill = (color & 0x00FFFFFF) | 0x28000000; // same color, mostly see-through
-				Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.strokeAndFill(color, 2.0F, fill))
-					.setAlwaysOnTop();
+			if (Settings.chunks != ChunkStyle.OFF && client.level != null && client.player != null) {
+				for (Scanner.Chunk chunk : SCANNER.marked()) {
+					AABB column = column(client.level, chunk);
+					// The outline shows through walls.
+					Gizmos.cuboid(column, GizmoStyle.strokeAndFill(CHUNK_BLUE, 3.0F, 0))
+						.setAlwaysOnTop();
+					// The solid fill is hidden by walls like a real block, and cleared when
+					// you are in or near the chunk so you can see the blocks you dig.
+					if (Settings.chunks.fills(chunk.x(), chunk.z(),
+							client.player.getX(), client.player.getZ())) {
+						Gizmos.cuboid(column, GizmoStyle.strokeAndFill(CHUNK_BLUE, 3.0F, CHUNK_BLUE));
+					}
+				}
 			}
 		}
 	}
 
-	/** F3+G-style full-height edges plus a bright border around the player's 16-block section. */
-	private static void drawChunkBorder(Minecraft client, long key) {
-		int chunkX = (int) (key >> 32);
-		int chunkZ = (int) key;
-		double minX = chunkX << 4;
-		double maxX = (chunkX + 1) << 4;
-		double minZ = chunkZ << 4;
-		double maxZ = (chunkZ + 1) << 4;
-		double minY = client.level.getMinY();
-		double maxY = client.level.getMaxY();
-		int blue = 0xFF006BFF;
-		Gizmos.cuboid(new AABB(minX, minY, minZ, maxX, maxY, maxZ), GizmoStyle.stroke(blue, 4.0F))
-			.setAlwaysOnTop();
-
-		int playerY = client.player == null ? (int) minY : client.player.getBlockY();
-		double sectionBottom = Math.floorDiv(playerY, 16) * 16.0;
-		drawChunkSection(client, minX, maxX, minZ, maxZ, sectionBottom, blue);
-		drawChunkSection(client, minX, maxX, minZ, maxZ, sectionBottom + 16.0, blue);
+	/** The blue shape of a chunk, from the bottom of the world to halfway up. */
+	private static AABB column(Level level, Scanner.Chunk chunk) {
+		int x = chunk.x() << 4;
+		int z = chunk.z() << 4;
+		return new AABB(x, level.getMinY(), z,
+			x + 16, ChunkStyle.top(level.getMinY(), level.getMaxY()), z + 16);
 	}
 
-	private static void drawChunkSection(Minecraft client, double minX, double maxX, double minZ,
-		double maxZ, double y, int color) {
-		if (y < client.level.getMinY() || y > client.level.getMaxY()) return;
-		Vec3 a = new Vec3(minX, y, minZ);
-		Vec3 b = new Vec3(maxX, y, minZ);
-		Vec3 c = new Vec3(maxX, y, maxZ);
-		Vec3 d = new Vec3(minX, y, maxZ);
-		Gizmos.line(a, b, color, 3.0F).setAlwaysOnTop();
-		Gizmos.line(b, c, color, 3.0F).setAlwaysOnTop();
-		Gizmos.line(c, d, color, 3.0F).setAlwaysOnTop();
-		Gizmos.line(d, a, color, 3.0F).setAlwaysOnTop();
+	/** Shows "click to see" above the hotbar while there is something to open. */
+	private void showHint(Minecraft client) {
+		String hint = null;
+		if (Settings.hints && Settings.radarOn && client.screen == null && client.player != null) {
+			Target target = target(client, client.player);
+			if (target != null) {
+				hint = target.hint();
+			} else {
+				Scanner.Hit aimed = aimedHit(client);
+				if (aimed != null) hint = "Sneak + left click to see: " + aimed.block().getName().getString();
+			}
+		}
+		if (hint != null) {
+			client.gui.setOverlayMessage(Component.literal(hint), false);
+		} else if (hintShowing) {
+			client.gui.setOverlayMessage(Component.empty(), false);
+		}
+		hintShowing = hint != null;
 	}
 
-	private static void drawActivityHud(GuiGraphics graphics) {
-		Minecraft client = Minecraft.getInstance();
-		if (!Settings.radarOn || client.options.hideGui || client.player == null) return;
-		Scanner.Stats stats = SCANNER.cachedStats();
-		String title = "BLOCK RADAR  ·  ACTIVE";
-		String activity = stats.suspiciousChunks() + " suspicious chunks  ·  " + Format.count(stats.suspicious()) + " blocks";
-		int effectiveRange = Math.min(Settings.scanRange, client.options.getEffectiveRenderDistance());
-		String range = "Scan radius: " + effectiveRange + " chunks";
-		int width = Math.max(client.font.width(title), Math.max(client.font.width(activity), client.font.width(range))) + 18;
-		int x = graphics.guiWidth() - width - 8;
-		Theme.box(graphics, x, 8, width, 43, Theme.PANEL);
-		graphics.fill(x + 8, 8, x + width - 8, 10, Theme.ACCENT);
-		Theme.text(graphics, client.font, title, x + 9, 14, Theme.TEXT);
-		Theme.text(graphics, client.font, activity, x + 9, 25, 0xFF8FC7FF);
-		Theme.text(graphics, client.font, range, x + 9, 36, Theme.MUTED);
-		if (inspectedHit != null) drawInspectHud(graphics, inspectedHit, stats);
+	/** The highlighted block the player could break right now, or null. */
+	private static Scanner.Hit aimedHit(Minecraft client) {
+		if (Settings.outlines && client.hitResult instanceof BlockHitResult block
+				&& block.getType() == HitResult.Type.BLOCK) {
+			return SCANNER.drawnAt(block.getBlockPos());
+		}
+		return null;
 	}
 
-	/** Compact half-scale details card shown after middle-clicking a highlighted block. */
-	private static void drawInspectHud(GuiGraphics graphics, Scanner.Hit hit, Scanner.Stats stats) {
-		Minecraft client = Minecraft.getInstance();
-		float scale = 0.5F;
-		int boxWidth = 420;
-		int boxHeight = 112;
-		float x = graphics.guiWidth() - boxWidth * scale - 8;
-		var pose = graphics.pose();
-		pose.pushMatrix();
-		pose.translate(x, 58);
-		pose.scale(scale, scale);
-		Theme.box(graphics, 0, 0, boxWidth, boxHeight, Theme.PANEL);
-		Theme.outline(graphics, 0, 0, boxWidth, boxHeight, hit.category().color);
-		Theme.text(graphics, client.font, hit.block().getName().getString(), 14, 13, Theme.TEXT);
-		Theme.pill(graphics, client.font, hit.category().label.toUpperCase(), 270, 9, 132, hit.category().color);
-		Theme.text(graphics, client.font, "Position  " + hit.pos().getX() + ", " + hit.pos().getY() + ", "
-			hit.pos().getZ(), 14, 38, Theme.MUTED);
-		int count = stats.byBlock().stream().filter(entry -> entry.getKey() == hit.block())
-			.mapToInt(entry -> entry.getValue()).sum();
-		Theme.text(graphics, client.font, "Scanned total  " + Format.count(count), 14, 58, Theme.TEXT);
-		Theme.text(graphics, client.font, "Middle-click another highlighted block to inspect it", 14, 84, Theme.MUTED);
-		pose.popMatrix();
-	}
+	/**
+	 * Finds what a left click would open: a highlighted block first, then a marked chunk.
+	 * A normal click on a block in reach always breaks it, and mobs can still be hit.
+	 * Sneak and click to see a highlighted block that is in reach or behind a block.
+	 *
+	 * @return null if a left click should do what it normally does
+	 */
+	private Target target(Minecraft client, LocalPlayer player) {
+		if (client.level == null) return null;
+		HitResult aim = client.hitResult;
+		if (aim != null && aim.getType() == HitResult.Type.ENTITY) return null;
+		boolean blockInReach = aim != null && aim.getType() == HitResult.Type.BLOCK;
+		if (blockInReach && !player.isShiftKeyDown()) return null; // digging
 
-	/** Finds the highlighted block under the crosshair, even through walls, and shows its counts. */
-	private void inspect(Minecraft client) {
-		LocalPlayer player = client.player;
-		if (player == null) return;
+		// Look for a highlight along the line of sight.
 		Vec3 eye = player.getEyePosition();
 		Vec3 end = eye.add(player.getViewVector(1.0F).scale(1024));
 
 		Scanner.Hit best = null;
 		double bestDistance = Double.MAX_VALUE;
-		for (Scanner.Hit hit : SCANNER.drawn()) {
+		// Blocks can only be clicked while their boxes are showing.
+		for (Scanner.Hit hit : Settings.outlines ? SCANNER.drawn() : List.<Scanner.Hit>of()) {
 			Optional<Vec3> point = new AABB(hit.pos()).clip(eye, end);
 			if (point.isEmpty()) continue;
 			double distance = eye.distanceToSqr(point.get());
@@ -183,6 +195,32 @@ public class BlockRadarClient implements ClientModInitializer {
 				bestDistance = distance;
 			}
 		}
-		inspectedHit = best;
+		if (best != null) return blockTarget(best);
+		// Chunks only open when no block is in reach, so sneak-digging keeps working.
+		if (blockInReach || Settings.chunks == ChunkStyle.OFF) return null;
+
+		Scanner.Chunk nearest = null;
+		for (Scanner.Chunk chunk : SCANNER.marked()) {
+			// The chunk you stand in is opened with its own key.
+			if (chunk.x() == player.getBlockX() >> 4 && chunk.z() == player.getBlockZ() >> 4) continue;
+			Optional<Vec3> point = column(client.level, chunk).clip(eye, end);
+			if (point.isEmpty()) continue;
+			double distance = eye.distanceToSqr(point.get());
+			if (distance < bestDistance) {
+				nearest = chunk;
+				bestDistance = distance;
+			}
+		}
+		return nearest == null ? null : chunkTarget(nearest);
+	}
+
+	private static Target blockTarget(Scanner.Hit hit) {
+		return new Target("Left click to see: " + hit.block().getName().getString(),
+			() -> new InfoScreen(hit));
+	}
+
+	private static Target chunkTarget(Scanner.Chunk chunk) {
+		return new Target("Left click to see chunk " + chunk.x() + ", " + chunk.z(),
+			() -> new ChunkScreen(SCANNER.report(chunk)));
 	}
 }

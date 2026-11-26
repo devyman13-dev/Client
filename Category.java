@@ -3,9 +3,10 @@ package blockradar;
 /** The kinds of blocks the radar can highlight. Colors are ARGB. */
 public enum Category {
 	REDSTONE("Redstone", 0xFFFF4D5E, true),
-	WRONG_DIMENSION("Wrong dimension", 0xFFB872FF, true),
-	WRONG_BIOME("Wrong biome", 0xFFFFB347, true),
-	PLACED("Base blocks", 0xFF3DD6F5, true);
+	STORAGE("Storage items", 0xFFFFD54D, true),
+	PLACED("Player-placed", 0xFF3DD6F5, true),
+	/** Blocks chosen in the block list. */
+	PICKED("My blocks", 0xFF7CF29A, true);
 
 	public final String label;
 	public final int color;
