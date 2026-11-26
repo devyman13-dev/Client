@@ -48,11 +48,10 @@ to move a panel, right click a title to fold it, Esc to close. Positions are rem
 - **Results**: suspicious count and percent, then every block found. Click one to show only
   it. Scroll for more.
 - The HUD shows FPS and counts in the top left.
-- **Pick blocks...**: a searchable list of selectable blocks, each shown with its in-game icon.
-  Click a block to toggle only that block; the clicked-chunk details use the same icons. They are
-  saved and shown under **My blocks**. Ores and ancient debris are left out (x-ray). To see
-  only your picks, switch the other categories off. Netherrack, reinforced deepslate, copper,
-  and lightning rods are also excluded. For very common blocks, every one is
+- **Pick blocks...**: a searchable Xray-style grid with an icon for every non-air block in the
+  registry, including ores and modded blocks. Hover an icon for its name and click to toggle that
+  block. The clicked-chunk details also show each block's icon and count. Picks are saved under
+  **My blocks**. To see only your picks, switch the other categories off. For very common blocks, every one is
   counted but only up to 256 per chunk get positions (group sizes then show a "+").
 - Each block has its own highlight color, set in `Colors.java`.
 - Every scanned chunk with a highlighted block is marked in blue, from the bottom of the

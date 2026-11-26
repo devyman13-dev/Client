@@ -54,7 +54,8 @@ public class FlatButton extends AbstractWidget {
 			return;
 		}
 
-		if (hover) g.fill(x, y, x + w, y + HEIGHT, Theme.ROW_HOVER);
+		g.fill(x, y, x + w, y + HEIGHT, hover ? Theme.ROW_HOVER : Theme.ROW_BG);
+		g.fill(x + 4, y + HEIGHT - 1, x + w - 4, y + HEIGHT, Theme.GRID_LINE);
 		if (lit) {
 			g.fill(x, y, x + w, y + HEIGHT, (color & 0x00FFFFFF) | 0x22000000);
 			g.fill(x, y, x + 2, y + HEIGHT, color);

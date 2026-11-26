@@ -280,7 +280,9 @@ public class RadarScreen extends Screen implements Menu.Listener {
 		g.fill(x + 2, y + 2, x + w + 2, y + height + 3, Theme.SHADOW);
 		g.fill(x, y, x + w, y + height + 1, Theme.PANEL);
 		g.fill(x, y, x + w, y + Menu.HEADER, Theme.HEADER);
-		g.fill(x, y, x + w, y + 2, accent);
+		g.fill(x + 2, y + 2, x + w - 2, y + 3, Theme.EDGE);
+		g.fill(x + 8, y, x + w - 8, y + 2, accent);
+		Theme.frame(g, x, y, w, height + 1, accent);
 		Theme.centered(g, this.font, panel.title, x + w / 2, y + 6, Theme.TEXT);
 		Theme.text(g, this.font, panel.open ? "-" : "+", x + w - 10, y + 6, Theme.MUTED);
 
@@ -294,7 +296,8 @@ public class RadarScreen extends Screen implements Menu.Listener {
 	private void drawRow(GuiGraphics g, Menu.Row row, int x, int y, int w, boolean hover) {
 		int accent = Theme.accent();
 		if (row.setting) g.fill(x, y, x + w, y + Menu.ROW, Theme.SETTING);
-		if (hover) g.fill(x, y, x + w, y + Menu.ROW, Theme.ROW_HOVER);
+		g.fill(x, y, x + w, y + Menu.ROW, hover ? Theme.ROW_HOVER : Theme.ROW_BG);
+		g.fill(x + 5, y + Menu.ROW - 1, x + w - 5, y + Menu.ROW, Theme.GRID_LINE);
 		if (row.on && !row.setting) {
 			g.fill(x, y, x + w, y + Menu.ROW, Theme.alpha(accent, 0x2E));
 			g.fill(x, y, x + 2, y + Menu.ROW, accent);
