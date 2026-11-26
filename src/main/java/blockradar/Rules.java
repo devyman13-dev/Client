@@ -21,7 +21,7 @@ public final class Rules {
 		piston sticky_piston piston_head moving_piston observer repeater comparator
 		lever dispenser dropper hopper crafter note_block target daylight_detector
 		tripwire tripwire_hook tnt trapped_chest powered_rail detector_rail activator_rail
-		sculk_sensor calibrated_sculk_sensor sculk_shrieker slime_block honey_block
+		calibrated_sculk_sensor slime_block honey_block
 		iron_door iron_trapdoor
 		""");
 
@@ -51,6 +51,9 @@ public final class Rules {
 		short_grass tall_grass fern dandelion poppy cactus sugar_cane
 		""");
 
+	private static final Set<String> SCULK = words(
+		"sculk sculk_vein sculk_catalyst sculk_shrieker sculk_sensor");
+
 	/** Block name -> biome name fragments where it is expected to appear. */
 	private static final Map<String, List<String>> BIOME_BLOCKS = new java.util.HashMap<>();
 
@@ -73,7 +76,6 @@ public final class Rules {
 			tube_coral_block brain_coral_block bubble_coral_block fire_coral_block
 			horn_coral_block""", "warm_ocean");
 		biome("cave_vines cave_vines_plant spore_blossom big_dripleaf big_dripleaf_stem small_dripleaf", "lush_caves");
-		biome("sculk sculk_catalyst sculk_vein", "deep_dark");
 	}
 
 	private static final Set<String> CRAFTED = words("""
@@ -96,10 +98,6 @@ public final class Rules {
 		return REDSTONE.contains(block) || endsWithAny(block, REDSTONE_ENDINGS);
 	}
 
-	private static boolean isRedstoneOre(String block) {
-		return block.equals("redstone_ore") || block.equals("deepslate_redstone_ore");
-	}
-
 	private static boolean isOverworld(String block) {
 		// Nether "wood" uses _stem and _hyphae, so _log and _leaves are always overworld.
 		return OVERWORLD.contains(block) || block.endsWith("_log") || block.endsWith("_leaves");
@@ -110,17 +108,40 @@ public final class Rules {
 	}
 
 	/**
+	 * Sculk grows naturally in the deep dark, which sits deep down and under mountains.
+	 * Ancient cities can also stick out past the edge of the deep dark.
+	 */
+	private static boolean isNaturalSculkSpot(String biome, int y) {
+		if (biome.equals("deep_dark") || y < 0) return true;
+		boolean mountain = biome.endsWith("_peaks") || biome.endsWith("_slopes") || biome.equals("grove")
+			|| biome.equals("meadow") || biome.startsWith("windswept_");
+		return mountain && y < 64;
+	}
+
+	/** True if the answer for this block can change with the biome or height. */
+	public static boolean dependsOnPlace(String block) {
+		return BIOME_BLOCKS.containsKey(block) || SCULK.contains(block);
+	}
+
+	/**
 	 * @param dimension "overworld", "the_nether" or "the_end"
 	 * @param biome     biome name such as "cherry_grove"
+	 * @param y         height of the block
 	 * @return why the block should be highlighted, or null if it looks normal here
 	 */
-	public static Category classify(String block, String dimension, String biome) {
+	public static Category classify(String block, String dimension, String biome, int y) {
 		if (isRedstone(block)) return Category.REDSTONE;
-		if (isRedstoneOre(block)) return Category.REDSTONE_ORE;
 
 		boolean overworld = dimension.equals("overworld");
 		boolean nether = dimension.equals("the_nether");
 		boolean end = dimension.equals("the_end");
+
+		if (SCULK.contains(block)) {
+			if (overworld && isNaturalSculkSpot(biome, y)) return null;
+			if (block.equals("sculk_sensor")) return Category.REDSTONE;
+			if (overworld) return Category.WRONG_BIOME;
+			return nether || end ? Category.WRONG_DIMENSION : null;
+		}
 
 		// Custom dimensions have no "native" list, so only vanilla ones are checked.
 		if (overworld || nether || end) {

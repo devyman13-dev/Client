@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `blockradar-jar`. Unzip it to get `blockradar-1.0.0.jar`.
+   `blockradar-jar`. Unzip it to get `blockradar-1.2.0.jar`.
 
 ### Option B: build on your computer
-1. Install JDK 21 or newer (for example from adoptium.net).
+1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.0.0.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.2.0.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.0.0.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.2.0.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)
@@ -32,9 +32,11 @@ in your `.minecraft/mods` folder.
 | Inspect a highlighted block | Look at it and middle click (your Pick Block button) |
 
 ## Menu
-- **Categories** dropdown: Redstone, Redstone ore (off), Wrong dimension, Wrong biome,
-  Crafted blocks (off).
-- **Showing** dropdown: every block found with its count. Pick one to highlight only it.
+- The top shows how many suspicious blocks were found and what percent of all scanned
+  (non-air) blocks that is.
+- **Categories** dropdown: Redstone, Wrong dimension, Wrong biome, Crafted blocks (off).
+- **Showing** dropdown: every block found with its count and share. Scroll for more.
+- Redstone ore is never highlighted. Sculk is ignored where it grows naturally.
 
 ## Limits
 - Only chunks the game has loaded can be scanned. On servers this may be less than your
@@ -43,5 +45,5 @@ in your `.minecraft/mods` folder.
 - "Native" is decided by the lists in `Rules.java`. Blocks not listed are treated as
   normal. Natural structures (ruined portals, villages, ancient cities) and trees on
   biome borders can be flagged.
-- Settings reset when the game restarts.
+- Menu settings are saved in `.minecraft/config/blockradar.properties`.
 - Many servers ban see-through highlighting. Use it in single player or where allowed.

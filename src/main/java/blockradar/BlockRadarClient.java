@@ -1,5 +1,6 @@
 package blockradar;
 
+import java.nio.file.Path;
 import java.util.Optional;
 
 import com.mojang.blaze3d.platform.InputConstants;
@@ -7,6 +8,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -18,12 +20,23 @@ import net.minecraft.world.phys.Vec3;
 
 public class BlockRadarClient implements ClientModInitializer {
 	public static final Scanner SCANNER = new Scanner();
-	public static boolean active = true;
 
 	private boolean clickWasDown;
 
+	private static Path settingsFile() {
+		return FabricLoader.getInstance().getConfigDir().resolve("blockradar.properties");
+	}
+
+	/** Call after the player changes any setting. */
+	public static void saveSettings() {
+		Settings.save(settingsFile());
+	}
+
 	@Override
 	public void onInitializeClient() {
+		Settings.load(settingsFile());
+		SCANNER.restoreFocus(Settings.onlyBlock);
+
 		KeyMapping.Category keys = KeyMapping.Category.register(
 			Identifier.fromNamespaceAndPath("blockradar", "main"));
 		KeyMapping menuKey = KeyBindingHelper.registerKeyBinding(
@@ -33,22 +46,23 @@ public class BlockRadarClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleKey.consumeClick()) {
-				active = !active;
+				Settings.radarOn = !Settings.radarOn;
+				saveSettings();
 				SCANNER.clear();
 			}
 			while (menuKey.consumeClick()) {
 				client.setScreen(new RadarScreen());
 			}
-			if (active) SCANNER.tick(client);
+			if (Settings.radarOn) SCANNER.tick(client);
 
 			// "Pick block" is middle click by default.
 			boolean clickDown = client.options.keyPickItem.isDown();
-			if (active && clickDown && !clickWasDown && client.screen == null) {
+			if (Settings.radarOn && clickDown && !clickWasDown && client.screen == null) {
 				inspect(client);
 			}
 			clickWasDown = clickDown;
 
-			if (active) drawOutlines(client);
+			if (Settings.radarOn) drawOutlines(client);
 		});
 	}
 
@@ -56,7 +70,9 @@ public class BlockRadarClient implements ClientModInitializer {
 	private void drawOutlines(Minecraft client) {
 		try (var collection = client.collectPerTickGizmos()) {
 			for (Scanner.Hit hit : SCANNER.drawn()) {
-				Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.stroke(hit.category().color))
+				int color = hit.category().color;
+				int fill = (color & 0x00FFFFFF) | 0x28000000; // same color, mostly see-through
+				Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.strokeAndFill(color, 2.0F, fill))
 					.setAlwaysOnTop();
 			}
 		}

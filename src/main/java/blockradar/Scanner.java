@@ -3,13 +3,13 @@ package blockradar;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import net.minecraft.client.Minecraft;
@@ -31,10 +31,17 @@ public final class Scanner {
 	private static final long TIME_BUDGET_NANOS = 4_000_000L; // 4 ms per tick
 	private static final int MAX_DRAWN = 2000;
 
-	private final Map<Long, List<Hit>> chunks = new HashMap<>();
+	private record ChunkData(List<Hit> hits, int blocks) {}
+	private record Rule(Category category, boolean dependsOnPlace) {}
+
+	/** Totals for the menu. "blocks" is every non-air block scanned. */
+	public record Stats(long blocks, long suspicious, List<Map.Entry<Block, Integer>> byBlock,
+		Map<Category, Integer> byCategory) {}
+
+	private final Map<Long, ChunkData> chunks = new HashMap<>();
 	private final ArrayDeque<int[]> queue = new ArrayDeque<>();
 	/** Rules result per block for the current dimension, so each block is only checked once. */
-	private final Map<Block, Optional<Category>> known = new IdentityHashMap<>();
+	private final Map<Block, Rule> known = new IdentityHashMap<>();
 	private ClientLevel level;
 	private List<Hit> drawn = List.of();
 	private int ticks;
@@ -45,8 +52,17 @@ public final class Scanner {
 	public List<Hit> drawn() { return drawn; }
 	public Block focus() { return focus; }
 
+	/** Brings back the block that was selected last time the game ran. */
+	public void restoreFocus(String id) {
+		for (Block block : BuiltInRegistries.BLOCK) {
+			if (BuiltInRegistries.BLOCK.getKey(block).toString().equals(id)) focus = block;
+		}
+	}
+
 	public void setFocus(Block block) {
 		focus = block;
+		Settings.onlyBlock = block == null ? "" : BuiltInRegistries.BLOCK.getKey(block).toString();
+		BlockRadarClient.saveSettings();
 		refreshDrawn(Minecraft.getInstance().player);
 	}
 
@@ -60,13 +76,11 @@ public final class Scanner {
 		LocalPlayer player = client.player;
 		if (client.level == null || player == null) {
 			level = null;
-			focus = null;
 			clear();
 			return;
 		}
 		if (client.level != level) { // joined a world or changed dimension
 			level = client.level;
-			focus = null;
 			known.clear();
 			clear();
 		}
@@ -112,10 +126,12 @@ public final class Scanner {
 		return path(BuiltInRegistries.BLOCK.getKey(block).toString());
 	}
 
-	/** What the rules say about a block before looking at the biome. */
-	private Category baseCategory(Block block, String dimension) {
-		return known.computeIfAbsent(block,
-			b -> Optional.ofNullable(Rules.classify(blockName(b), dimension, ""))).orElse(null);
+	/** What the rules say about a block before looking at where it is. */
+	private Rule rule(Block block, String dimension) {
+		return known.computeIfAbsent(block, b -> {
+			String name = blockName(b);
+			return new Rule(Rules.classify(name, dimension, "", Integer.MAX_VALUE), Rules.dependsOnPlace(name));
+		});
 	}
 
 	private void scanChunk(int chunkX, int chunkZ) {
@@ -128,39 +144,39 @@ public final class Scanner {
 
 		String dimension = path(level.dimension().identifier().toString());
 		List<Hit> hits = new ArrayList<>();
+		int[] blocks = {0};
 		LevelChunkSection[] sections = chunk.getSections();
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
 		for (int i = 0; i < sections.length; i++) {
 			LevelChunkSection section = sections[i];
-			if (section.hasOnlyAir() || !section.maybeHas(state -> {
-				Category c = baseCategory(state.getBlock(), dimension);
-				return c != null && c.enabled;
-			})) continue;
+			if (section.hasOnlyAir()) continue;
+			section.getStates().count((state, count) -> {
+				if (!state.isAir()) blocks[0] += count;
+			});
+			if (!section.maybeHas(state -> rule(state.getBlock(), dimension).category() != null)) continue;
 			int baseY = chunk.getSectionYFromSectionIndex(i) << 4;
 
 			for (int y = 0; y < 16; y++) {
 				for (int z = 0; z < 16; z++) {
 					for (int x = 0; x < 16; x++) {
 						BlockState state = section.getBlockState(x, y, z);
-						Category category = baseCategory(state.getBlock(), dimension);
-						if (category == null || !category.enabled) continue;
+						Rule rule = rule(state.getBlock(), dimension);
+						Category category = rule.category();
+						if (category == null) continue;
 						pos.set((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
 						// The biome is only looked up for blocks that depend on it.
-						if (category == Category.WRONG_BIOME) {
+						if (rule.dependsOnPlace()) {
 							String biome = path(level.getBiome(pos).getRegisteredName());
-							category = Rules.classify(blockName(state.getBlock()), dimension, biome);
+							category = Rules.classify(blockName(state.getBlock()), dimension, biome, pos.getY());
 						}
-						if (category != null && category.enabled) {
-							hits.add(new Hit(pos.immutable(), state.getBlock(), category));
-						}
+						if (category != null) hits.add(new Hit(pos.immutable(), state.getBlock(), category));
 					}
 				}
 			}
 		}
 
-		if (hits.isEmpty()) chunks.remove(key);
-		else chunks.put(key, hits);
+		chunks.put(key, new ChunkData(hits, blocks[0]));
 	}
 
 	private boolean visible(Hit hit) {
@@ -172,8 +188,8 @@ public final class Scanner {
 		if (player == null) return;
 		BlockPos here = player.blockPosition();
 		List<Hit> all = new ArrayList<>();
-		for (List<Hit> list : chunks.values()) {
-			for (Hit hit : list) if (visible(hit)) all.add(hit);
+		for (ChunkData data : chunks.values()) {
+			for (Hit hit : data.hits()) if (visible(hit)) all.add(hit);
 		}
 		if (all.size() > MAX_DRAWN) {
 			all.sort(Comparator.comparingDouble(h -> h.pos().distSqr(here)));
@@ -182,32 +198,31 @@ public final class Scanner {
 		drawn = all;
 	}
 
-	/** How many of each block type were found in all scanned chunks, biggest first. */
-	public List<Map.Entry<Block, Integer>> totals() {
+	/** Counts everything scanned so far. Block types are listed biggest first. */
+	public Stats stats() {
+		long blocks = 0;
+		long suspicious = 0;
 		Map<Block, Integer> counts = new HashMap<>();
-		for (List<Hit> list : chunks.values()) {
-			for (Hit hit : list) {
-				if (hit.category().enabled) counts.merge(hit.block(), 1, Integer::sum);
+		Map<Category, Integer> categories = new EnumMap<>(Category.class);
+		for (ChunkData data : chunks.values()) {
+			blocks += data.blocks();
+			for (Hit hit : data.hits()) {
+				categories.merge(hit.category(), 1, Integer::sum);
+				if (!hit.category().enabled) continue;
+				suspicious++;
+				counts.merge(hit.block(), 1, Integer::sum);
 			}
 		}
-		List<Map.Entry<Block, Integer>> result = new ArrayList<>(counts.entrySet());
-		result.sort((a, b) -> b.getValue() - a.getValue());
-		return result;
-	}
-
-	public int total(Block block) {
-		int count = 0;
-		for (List<Hit> list : chunks.values()) {
-			for (Hit hit : list) if (hit.block() == block && hit.category().enabled) count++;
-		}
-		return count;
+		List<Map.Entry<Block, Integer>> byBlock = new ArrayList<>(counts.entrySet());
+		byBlock.sort((a, b) -> b.getValue() - a.getValue());
+		return new Stats(blocks, suspicious, byBlock, categories);
 	}
 
 	/** Size of the touching group (including diagonals) of the same block as this hit. */
 	public int clusterSize(Hit start) {
 		Set<BlockPos> remaining = new HashSet<>();
-		for (List<Hit> list : chunks.values()) {
-			for (Hit hit : list) if (hit.block() == start.block()) remaining.add(hit.pos());
+		for (ChunkData data : chunks.values()) {
+			for (Hit hit : data.hits()) if (hit.block() == start.block()) remaining.add(hit.pos());
 		}
 		ArrayDeque<BlockPos> open = new ArrayDeque<>();
 		remaining.remove(start.pos());
