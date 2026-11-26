@@ -4,7 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/** The list of blocks in one chunk, shown in the top right corner. */
+/** The suspicious blocks in one chunk, shown in the top right corner. */
 public class ChunkScreen extends Screen {
 	private static final int PANEL_WIDTH = 210;
 	private static final int MARGIN = 6;
@@ -35,19 +35,11 @@ public class ChunkScreen extends Screen {
 
 		for (int i = 0; i < visible; i++) {
 			Scanner.Row row = report.rows().get(scroll + i);
-			boolean marked = row.highlighted() > 0;
-			String detail = Format.count(row.count());
-			// Only some of this type may be highlighted, such as deepslate tiles up high.
-			if (marked && row.highlighted() < row.count()) {
-				detail = Format.count(row.highlighted()) + " of " + detail;
-			}
 			FlatButton button = new FlatButton(left(), MARGIN + HEADER + i * ROW, panelWidth(),
 				row.block().getName().getString(), () -> {
-					if (!marked) return;
 					BlockRadarClient.SCANNER.setFocus(row.block());
 					onClose();
-				}).detail(detail);
-			if (marked) button.lit(true).color(row.color());
+				}).detail(Format.count(row.count())).lit(true).color(row.color());
 			addRenderableWidget(button);
 		}
 
@@ -72,7 +64,7 @@ public class ChunkScreen extends Screen {
 	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		// No super call: the world stays clear behind the corner panel.
 		Theme.box(graphics, left(), MARGIN, panelWidth(), panelHeight, Theme.PANEL);
-		graphics.fill(left() + 10, MARGIN, left() + panelWidth() - 10, MARGIN + 2, Theme.ACCENT);
+		graphics.fill(left() + 10, MARGIN, left() + panelWidth() - 10, MARGIN + 2, Theme.accent());
 	}
 
 	@Override
@@ -84,10 +76,10 @@ public class ChunkScreen extends Screen {
 		Theme.centered(graphics, this.font, this.title.getString(), center, MARGIN + 7, Theme.TEXT);
 		Theme.centered(graphics, this.font, "X " + x + " to " + (x + 15) + "  •  Z " + z + " to " + (z + 15),
 			center, MARGIN + 19, Theme.MUTED);
-		Theme.centered(graphics, this.font, Format.count(report.highlighted()) + " highlighted  •  "
+		Theme.centered(graphics, this.font, Format.count(report.total()) + " suspicious  •  "
 			+ report.rows().size() + " block types", center, MARGIN + 31, Theme.MUTED);
 		if (report.rows().isEmpty()) {
-			Theme.centered(graphics, this.font, "This chunk is not loaded", center, MARGIN + HEADER + 4, Theme.MUTED);
+			Theme.centered(graphics, this.font, "Nothing found in this chunk", center, MARGIN + HEADER + 4, Theme.MUTED);
 		}
 	}
 

@@ -10,6 +10,13 @@ public final class Format {
 		return String.format(Locale.US, "%,d", number);
 	}
 
+	/** Like count, but short for big numbers: 12k or 1.2M. */
+	public static String compact(long number) {
+		if (number < 10_000) return count(number);
+		if (number < 1_000_000) return number / 1_000 + "k";
+		return String.format(Locale.US, "%.1fM", number / 1_000_000.0);
+	}
+
 	public static String percent(long part, long whole) {
 		if (part <= 0 || whole <= 0) return "0%";
 		double value = 100.0 * part / whole;

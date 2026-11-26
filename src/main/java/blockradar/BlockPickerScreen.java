@@ -170,7 +170,8 @@ public class BlockPickerScreen extends Screen {
 
 	@Override
 	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-		super.renderBackground(graphics, mouseX, mouseY, delta);
+		// A plain dim instead of the game's blur, which costs frames.
+		graphics.fill(0, 0, this.width, this.height, Theme.DIM);
 		int gridWidth = columns * columnWidth + (columns - 1) * GAP;
 		Theme.box(graphics, left - 6, 2, gridWidth + 12, this.height - 4, Theme.PANEL);
 	}

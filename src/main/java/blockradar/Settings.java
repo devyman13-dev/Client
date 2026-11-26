@@ -15,16 +15,32 @@ public final class Settings {
 	private Settings() {}
 
 	public static boolean radarOn = true;
+	/** Boxes around highlighted blocks, and whether they are tinted inside. */
+	public static boolean outlines = true;
+	public static boolean fill = true;
+	/** The small overlay shown while playing. */
+	public static boolean hud = true;
+	/** The "left click to see" message. */
+	public static boolean hints = true;
 	/** How chunks with highlighted blocks are shown. */
 	public static ChunkStyle chunks = ChunkStyle.SOLID;
+	public static Accent accent = Accent.BLUE;
+
+	/** Performance: the most boxes and chunks drawn, nearest first. */
+	public static int maxOutlines = 600;
+	public static int maxChunks = 64;
+	/** Performance: time spent scanning per game tick, and the pause between full scans. */
+	public static int scanMillis = 2;
+	public static int rescanSeconds = 3;
+
 	/** Full name of the only block to show, such as "minecraft:piston". Empty means all. */
 	public static String onlyBlock = "";
 	/** Full names of the blocks chosen in the block list. */
 	public static final Set<String> picked = new LinkedHashSet<>();
 	/** Menu panel positions (-1 means not moved yet) and whether each panel is unfolded. */
-	public static final int[] panelX = {-1, -1, -1};
-	public static final int[] panelY = {-1, -1, -1};
-	public static final boolean[] panelOpen = {true, true, true};
+	public static final int[] panelX = {-1, -1, -1, -1};
+	public static final int[] panelY = {-1, -1, -1, -1};
+	public static final boolean[] panelOpen = {true, true, true, true};
 
 	/** Reads the file. Anything missing or unreadable keeps its current value. */
 	public static void load(Path file) {
@@ -37,9 +53,20 @@ public final class Settings {
 			return;
 		}
 		radarOn = flag(saved, "radar", radarOn);
+		outlines = flag(saved, "outlines", outlines);
+		fill = flag(saved, "fill", fill);
+		hud = flag(saved, "hud", hud);
+		hints = flag(saved, "hints", hints);
 		for (ChunkStyle style : ChunkStyle.values()) {
 			if (style.name().equals(saved.getProperty("chunks", "").trim())) chunks = style;
 		}
+		for (Accent value : Accent.values()) {
+			if (value.name().equals(saved.getProperty("accent", "").trim())) accent = value;
+		}
+		maxOutlines = ranged(saved, "maxOutlines", maxOutlines, 100, 2000);
+		maxChunks = ranged(saved, "maxChunks", maxChunks, 8, 256);
+		scanMillis = ranged(saved, "scanMillis", scanMillis, 1, 8);
+		rescanSeconds = ranged(saved, "rescanSeconds", rescanSeconds, 1, 15);
 		onlyBlock = saved.getProperty("onlyBlock", onlyBlock).trim();
 		String chosen = saved.getProperty("picked");
 		if (chosen != null) {
@@ -50,25 +77,34 @@ public final class Settings {
 			category.enabled = flag(saved, "category." + category.name(), category.enabled);
 		}
 		for (int i = 0; i < panelOpen.length; i++) {
-			panelX[i] = number(saved, "panel." + i + ".x", panelX[i]);
-			panelY[i] = number(saved, "panel." + i + ".y", panelY[i]);
-			panelOpen[i] = flag(saved, "panel." + i + ".open", panelOpen[i]);
+			panelX[i] = number(saved, "gui." + i + ".x", panelX[i]);
+			panelY[i] = number(saved, "gui." + i + ".y", panelY[i]);
+			panelOpen[i] = flag(saved, "gui." + i + ".open", panelOpen[i]);
 		}
 	}
 
 	public static void save(Path file) {
 		Properties saved = new Properties();
 		saved.setProperty("radar", Boolean.toString(radarOn));
+		saved.setProperty("outlines", Boolean.toString(outlines));
+		saved.setProperty("fill", Boolean.toString(fill));
+		saved.setProperty("hud", Boolean.toString(hud));
+		saved.setProperty("hints", Boolean.toString(hints));
 		saved.setProperty("chunks", chunks.name());
+		saved.setProperty("accent", accent.name());
+		saved.setProperty("maxOutlines", Integer.toString(maxOutlines));
+		saved.setProperty("maxChunks", Integer.toString(maxChunks));
+		saved.setProperty("scanMillis", Integer.toString(scanMillis));
+		saved.setProperty("rescanSeconds", Integer.toString(rescanSeconds));
 		saved.setProperty("onlyBlock", onlyBlock);
 		saved.setProperty("picked", String.join(",", picked));
 		for (Category category : Category.values()) {
 			saved.setProperty("category." + category.name(), Boolean.toString(category.enabled));
 		}
 		for (int i = 0; i < panelOpen.length; i++) {
-			saved.setProperty("panel." + i + ".x", Integer.toString(panelX[i]));
-			saved.setProperty("panel." + i + ".y", Integer.toString(panelY[i]));
-			saved.setProperty("panel." + i + ".open", Boolean.toString(panelOpen[i]));
+			saved.setProperty("gui." + i + ".x", Integer.toString(panelX[i]));
+			saved.setProperty("gui." + i + ".y", Integer.toString(panelY[i]));
+			saved.setProperty("gui." + i + ".open", Boolean.toString(panelOpen[i]));
 		}
 		try {
 			Files.createDirectories(file.toAbsolutePath().getParent());
@@ -86,6 +122,10 @@ public final class Settings {
 		} catch (NumberFormatException e) {
 			return fallback;
 		}
+	}
+
+	private static int ranged(Properties saved, String key, int fallback, int min, int max) {
+		return Math.max(min, Math.min(max, number(saved, key, fallback)));
 	}
 
 	private static boolean flag(Properties saved, String key, boolean fallback) {

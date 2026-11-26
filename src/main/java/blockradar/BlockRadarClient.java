@@ -1,6 +1,7 @@
 package blockradar;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -9,6 +10,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.event.client.player.ClientPreAttackCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
@@ -29,12 +31,15 @@ public class BlockRadarClient implements ClientModInitializer {
 	public static final Scanner SCANNER = new Scanner();
 
 	/** Chunk color. */
-	private static final int CHUNK_BLUE = 0xFF2F7BFF;
+	static final int CHUNK_BLUE = 0xFF2F7BFF;
+	/** The "click to see" check runs once every this many ticks. */
+	private static final int HINT_TICKS = 4;
 
 	/** What a left click would open right now. */
 	private record Target(String hint, Supplier<Screen> screen) {}
 
 	private boolean hintShowing;
+	private int ticks;
 
 	private static Path settingsFile() {
 		return FabricLoader.getInstance().getConfigDir().resolve("blockradar.properties");
@@ -58,6 +63,8 @@ public class BlockRadarClient implements ClientModInitializer {
 			new KeyMapping("key.blockradar.toggle", InputConstants.KEY_K, keys));
 		KeyMapping chunkKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.chunk", InputConstants.KEY_N, keys));
+
+		HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("blockradar", "hud"), RadarHud::render);
 
 		// Left click. Returning true stops the game from also breaking the block.
 		ClientPreAttackCallback.EVENT.register((client, player, clickCount) -> {
@@ -87,18 +94,22 @@ public class BlockRadarClient implements ClientModInitializer {
 			if (Settings.radarOn) SCANNER.tick(client);
 
 			if (Settings.radarOn) drawOutlines(client);
-			showHint(client);
+			RadarHud.tick();
+			if (++ticks % HINT_TICKS == 0) showHint(client);
 		});
 	}
 
 	/** Outlines drawn during a tick stay on screen until the next tick. */
 	private void drawOutlines(Minecraft client) {
 		try (var collection = client.collectPerTickGizmos()) {
-			for (Scanner.Hit hit : SCANNER.drawn()) {
-				int color = hit.color();
-				int fill = (color & 0x00FFFFFF) | 0x28000000; // same color, mostly see-through
-				Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.strokeAndFill(color, 2.0F, fill))
-					.setAlwaysOnTop();
+			if (Settings.outlines) {
+				for (Scanner.Hit hit : SCANNER.drawn()) {
+					int color = hit.color();
+					// The same color, mostly see-through, or nothing.
+					int fill = Settings.fill ? Theme.alpha(color, 0x28) : 0;
+					Gizmos.cuboid(new AABB(hit.pos()), GizmoStyle.strokeAndFill(color, 2.0F, fill))
+						.setAlwaysOnTop();
+				}
 			}
 			if (Settings.chunks != ChunkStyle.OFF && client.level != null && client.player != null) {
 				for (Scanner.Chunk chunk : SCANNER.marked()) {
@@ -117,17 +128,18 @@ public class BlockRadarClient implements ClientModInitializer {
 		}
 	}
 
-	/** The space a chunk takes up, from the bottom of the world to the top. */
+	/** The blue shape of a chunk, from the bottom of the world to halfway up. */
 	private static AABB column(Level level, Scanner.Chunk chunk) {
 		int x = chunk.x() << 4;
 		int z = chunk.z() << 4;
-		return new AABB(x, level.getMinY(), z, x + 16, level.getMaxY() + 1, z + 16);
+		return new AABB(x, level.getMinY(), z,
+			x + 16, ChunkStyle.top(level.getMinY(), level.getMaxY()), z + 16);
 	}
 
 	/** Shows "click to see" above the hotbar while there is something to open. */
 	private void showHint(Minecraft client) {
 		String hint = null;
-		if (Settings.radarOn && client.screen == null && client.player != null) {
+		if (Settings.hints && Settings.radarOn && client.screen == null && client.player != null) {
 			Target target = target(client, client.player);
 			if (target != null) {
 				hint = target.hint();
@@ -146,10 +158,9 @@ public class BlockRadarClient implements ClientModInitializer {
 
 	/** The highlighted block the player could break right now, or null. */
 	private static Scanner.Hit aimedHit(Minecraft client) {
-		if (client.hitResult instanceof BlockHitResult block && block.getType() == HitResult.Type.BLOCK) {
-			for (Scanner.Hit hit : SCANNER.drawn()) {
-				if (hit.pos().equals(block.getBlockPos())) return hit;
-			}
+		if (Settings.outlines && client.hitResult instanceof BlockHitResult block
+				&& block.getType() == HitResult.Type.BLOCK) {
+			return SCANNER.drawnAt(block.getBlockPos());
 		}
 		return null;
 	}
@@ -174,7 +185,8 @@ public class BlockRadarClient implements ClientModInitializer {
 
 		Scanner.Hit best = null;
 		double bestDistance = Double.MAX_VALUE;
-		for (Scanner.Hit hit : SCANNER.drawn()) {
+		// Blocks can only be clicked while their boxes are showing.
+		for (Scanner.Hit hit : Settings.outlines ? SCANNER.drawn() : List.<Scanner.Hit>of()) {
 			Optional<Vec3> point = new AABB(hit.pos()).clip(eye, end);
 			if (point.isEmpty()) continue;
 			double distance = eye.distanceToSqr(point.get());

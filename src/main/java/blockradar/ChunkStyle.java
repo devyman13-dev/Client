@@ -21,6 +21,16 @@ public enum ChunkStyle {
 		return Math.max(awayX, awayZ) >= CLEAR_DISTANCE;
 	}
 
+	/**
+	 * The height the blue chunks reach: halfway up the world.
+	 *
+	 * @param minY the lowest block level
+	 * @param maxY the highest block level
+	 */
+	public static int top(int minY, int maxY) {
+		return minY + (maxY + 1 - minY) / 2;
+	}
+
 	/** The style after this one, for the menu button. */
 	public ChunkStyle next() {
 		return values()[(ordinal() + 1) % values().length];

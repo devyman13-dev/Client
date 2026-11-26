@@ -40,15 +40,13 @@ public final class Scanner {
 	}
 	/** A chunk position (block position divided by 16). */
 	public record Chunk(int x, int z) {}
-	/** One block type in a chunk. "highlighted" is how many of them the radar marks. */
-	public record Row(Block block, int count, int highlighted, int color) {}
-	/** What is in one chunk, highlighted block types first. */
-	public record ChunkReport(Chunk chunk, List<Row> rows, int highlighted) {}
+	/** One highlighted block type in a chunk. */
+	public record Row(Block block, int count, int color) {}
+	/** The highlighted blocks of one chunk, most common first. */
+	public record ChunkReport(Chunk chunk, List<Row> rows, int total) {}
 	/** Size of a touching group. "partial" means there may be more than "size". */
 	public record Group(int size, boolean partial) {}
 
-	private static final long TIME_BUDGET_NANOS = 4_000_000L; // 4 ms per tick
-	private static final int MAX_DRAWN = 2000;
 	/** Most positions remembered per chunk for one kind of block. Counts are never limited. */
 	private static final int MAX_KEPT_FLAGGED = 4096;
 	private static final int MAX_KEPT_PICKED = 256;
@@ -78,8 +76,15 @@ public final class Scanner {
 	private final Map<Block, Rule> known = new IdentityHashMap<>();
 	private ClientLevel level;
 	private List<Hit> drawn = List.of();
-	/** Chunks holding at least one highlighted block. */
+	/** The same hits looked up by position. */
+	private Map<BlockPos, Hit> drawnAt = Map.of();
+	/** The nearest chunks holding at least one highlighted block. */
 	private List<Chunk> marked = List.of();
+	/** Whether a full scan is under way, the pause left before the next, and where the last began. */
+	private boolean sweeping;
+	private int rest;
+	private int sweptX;
+	private int sweptZ;
 	private int ticks;
 
 	/** If set, only this block type is highlighted. */
@@ -87,6 +92,13 @@ public final class Scanner {
 
 	public List<Hit> drawn() { return drawn; }
 	public List<Chunk> marked() { return marked; }
+	/** The drawn hit at this position, or null. */
+	public Hit drawnAt(BlockPos pos) { return drawnAt.get(pos); }
+
+	/** Picks what to draw again, after a setting changed. */
+	public void refresh() {
+		refreshDrawn(Minecraft.getInstance().player);
+	}
 	public Block focus() { return focus; }
 
 	/** Brings back the block that was selected last time the game ran. */
@@ -107,7 +119,10 @@ public final class Scanner {
 		chunks.clear();
 		queue.clear();
 		drawn = List.of();
+		drawnAt = Map.of();
 		marked = List.of();
+		sweeping = false;
+		rest = 0; // scan again right away
 	}
 
 	/** Starts over, for when the chosen blocks change. */
@@ -129,12 +144,21 @@ public final class Scanner {
 			clear();
 		}
 
-		if (queue.isEmpty()) startSweep(client, player);
+		if (!sweeping) {
+			// Between scans the radar rests, unless the player has reached a new chunk.
+			boolean movedOn = player.getBlockX() >> 4 != sweptX || player.getBlockZ() >> 4 != sweptZ;
+			if (rest <= 0 || movedOn) startSweep(client, player);
+			else rest--;
+		}
 
-		long deadline = System.nanoTime() + TIME_BUDGET_NANOS;
+		long deadline = System.nanoTime() + Settings.scanMillis * 1_000_000L;
 		while (!queue.isEmpty() && System.nanoTime() < deadline) {
 			int[] next = queue.poll();
 			scanChunk(next[0], next[1], player.getBlockY());
+		}
+		if (sweeping && queue.isEmpty()) {
+			sweeping = false;
+			rest = Settings.rescanSeconds * 20;
 		}
 
 		if (++ticks % 10 == 0) refreshDrawn(player);
@@ -157,6 +181,9 @@ public final class Scanner {
 		for (int x = px - radius; x <= px + radius; x++) {
 			for (int z = pz - radius; z <= pz + radius; z++) order.add(new int[] {x, z});
 		}
+		sweeping = true;
+		sweptX = px;
+		sweptZ = pz;
 		// Nearest chunks first.
 		order.sort(Comparator.comparingInt(c -> (c[0] - px) * (c[0] - px) + (c[1] - pz) * (c[1] - pz)));
 		queue.addAll(order);
@@ -275,7 +302,7 @@ public final class Scanner {
 		List<Chunk> found = new ArrayList<>();
 		for (long key : nearest) {
 			// Far chunks cannot make the cut once there are plenty of closer hits.
-			boolean room = all.size() < MAX_DRAWN * 4;
+			boolean room = all.size() < Settings.maxOutlines * 4;
 			boolean any = false;
 			for (Map.Entry<Key, Tally> entry : chunks.get(key).tallies().entrySet()) {
 				if (!visible(entry.getKey())) continue;
@@ -284,12 +311,17 @@ public final class Scanner {
 			}
 			if (any) found.add(new Chunk((int) (key >> 32), (int) key));
 		}
-		marked = found;
-		if (all.size() > MAX_DRAWN) {
+		// "found" is already nearest first.
+		marked = found.size() > Settings.maxChunks
+			? new ArrayList<>(found.subList(0, Settings.maxChunks)) : found;
+		if (all.size() > Settings.maxOutlines) {
 			all.sort(Comparator.comparingDouble(h -> h.pos().distSqr(here)));
-			all = new ArrayList<>(all.subList(0, MAX_DRAWN));
+			all = new ArrayList<>(all.subList(0, Settings.maxOutlines));
 		}
 		drawn = all;
+		Map<BlockPos, Hit> at = new HashMap<>();
+		for (Hit hit : all) at.put(hit.pos(), hit);
+		drawnAt = at;
 	}
 
 	/** Counts everything scanned so far. Block types are listed biggest first. */
@@ -322,43 +354,28 @@ public final class Scanner {
 		return new Stats(blocks, suspicious, highlighted, byBlock, categories, colors);
 	}
 
-	/** Counts every block type in a loaded chunk, leaving out ores and copper. */
+	/** Counts the highlighted blocks found in one chunk. Normal blocks are not listed. */
 	public ChunkReport report(Chunk where) {
 		Map<Block, Integer> counts = new HashMap<>();
-		if (level != null && level.getChunkSource().getChunk(where.x(), where.z(), ChunkStatus.FULL, false)
-				instanceof LevelChunk chunk) {
-			for (LevelChunkSection section : chunk.getSections()) {
-				if (section.hasOnlyAir()) continue;
-				section.getStates().count((state, count) -> {
-					if (!state.isAir() && Picks.allowed(blockName(state.getBlock()))) {
-						counts.merge(state.getBlock(), count, Integer::sum);
-					}
-				});
-			}
-		}
-
-		Map<Block, Integer> marks = new HashMap<>();
 		Map<Block, Integer> colors = new HashMap<>();
-		int highlighted = 0;
+		int total = 0;
 		ChunkData data = chunks.get(((long) where.x() << 32) | (where.z() & 0xFFFFFFFFL));
 		if (data != null) {
 			for (Map.Entry<Key, Tally> entry : data.tallies().entrySet()) {
 				if (entry.getKey().shown() == null) continue;
 				Block block = entry.getKey().block();
 				Tally tally = entry.getValue();
-				highlighted += tally.count;
-				marks.merge(block, tally.count, Integer::sum);
+				total += tally.count;
+				counts.merge(block, tally.count, Integer::sum);
 				if (!tally.hits.isEmpty()) colors.putIfAbsent(block, tally.hits.get(0).color());
 			}
 		}
 
 		List<Row> rows = new ArrayList<>();
 		counts.forEach((block, count) -> rows.add(new Row(block, count,
-			marks.getOrDefault(block, 0), colors.getOrDefault(block, Theme.ACCENT))));
-		// Highlighted types first, then the most common.
-		rows.sort(Comparator.comparing((Row row) -> row.highlighted() == 0)
-			.thenComparing(row -> -row.count()));
-		return new ChunkReport(where, rows, highlighted);
+			colors.getOrDefault(block, Theme.accent()))));
+		rows.sort(Comparator.comparingInt((Row row) -> -row.count()));
+		return new ChunkReport(where, rows, total);
 	}
 
 	/** Size of the touching group (including diagonals) of the same block as this hit. */

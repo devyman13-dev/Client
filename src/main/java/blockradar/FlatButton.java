@@ -14,7 +14,7 @@ public class FlatButton extends AbstractWidget {
 
 	private final Runnable action;
 	private String detail = "";
-	private int color = Theme.ACCENT;
+	private int color = Theme.accent();
 	private boolean lit;
 	private double share = -1;
 	private boolean primary;
@@ -44,7 +44,7 @@ public class FlatButton extends AbstractWidget {
 		int w = getWidth();
 
 		if (primary) {
-			Theme.box(g, x, y, w, getHeight(), hover ? 0xFF6BA1FF : Theme.ACCENT);
+			Theme.box(g, x, y, w, getHeight(), Theme.alpha(Theme.accent(), hover ? 0xFF : 0xC8));
 			Theme.centered(g, font, getMessage().getString(), x + w / 2, y + 4, Theme.TEXT);
 			return;
 		}
