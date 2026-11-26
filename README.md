@@ -15,7 +15,7 @@ client has loaded.
    `blockradar-jar`. Unzip it to get `blockradar-1.4.0.jar`.
 
 ### Option B: build on your computer
-1. Install JDK 25 (for example from adoptium.net).
+1. Install JDK 21 or newer (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
 4. The jar is `build/libs/blockradar-1.4.0.jar` (not the `-sources` one, if present).
@@ -34,12 +34,15 @@ in your `.minecraft/mods` folder.
 ## Menu
 - The top shows how many suspicious blocks were found and what percent of all scanned
   (non-air) blocks that is.
-- **Categories** dropdown: Redstone, Wrong dimension, Wrong biome, Player-placed.
+- The menu has a dark category sidebar and a scrollable block list. Click a category to
+  filter its blocks; use the switch beside it to enable or disable that category.
+- Block dots and world outlines share category colors: red for redstone, purple for wrong
+  dimension, orange for wrong biome, and cyan for player-placed candidates.
 - **Player-placed** covers ender chests (outside the End), shulker boxes, concrete,
   beacons and other blocks that never generate, plus deepslate tiles and variants above
   Y=20 or outside the Overworld.
   Normal and copper chests below Y=-35 are included too.
-- **Showing** dropdown: every block found with its count and share. Scroll for more.
+- Click a block row to highlight only that block type; scroll the list for more.
 - Redstone ore is never highlighted. Sculk is ignored where it grows naturally.
 
 ## Limits
