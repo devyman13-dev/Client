@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "blockradar",
+  "version": "${version}",
+  "name": "Block Radar",
+  "description": "Highlights redstone blocks and out-of-place blocks in loaded chunks.",
+  "environment": "client",
+  "entrypoints": { "client": ["blockradar.BlockRadarClient"] },
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
