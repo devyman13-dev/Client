@@ -1,36 +1,48 @@
 package blockradar;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Block;
 
-/** A floating module panel with category navigation and a color-coded block list. */
+/** Mist-inspired module layout with a sidebar, search field, and large block cards. */
 public class RadarScreen extends Screen {
-	private static final int PANEL_WIDTH = 560;
-	private static final int ROW_STEP = 26;
-	private static final int BODY_OFFSET = 104;
+	private static final int PANEL_WIDTH = 1040;
+	private static final int BODY_OFFSET = 137;
+	private static final int CARD_HEIGHT = 58;
+	private static final int CARD_STEP = 66;
+	private static final Set<Block> FAVORITES = new HashSet<>();
 
 	private Category selectedCategory = Category.REDSTONE;
 	private int scroll;
 	private int maxScroll;
 	private Scanner.Stats stats;
 	private int ticks;
+	private String searchQuery = "";
+	private String pendingSearchQuery = "";
+	private boolean searchDirty;
+	private boolean favoritesOnly;
+	private EditBox searchBox;
 
 	public RadarScreen() {
 		super(Component.literal("Block Radar"));
 	}
 
-	private int panelWidth() { return Math.min(PANEL_WIDTH, Math.max(280, width - 24)); }
-	private int panelHeight() { return Math.min(420, Math.max(220, height - 24)); }
+	private int panelWidth() { return Math.min(PANEL_WIDTH, Math.max(300, width - 24)); }
+	private int panelHeight() { return Math.min(680, Math.max(220, height - 24)); }
 	private int left() { return (width - panelWidth()) / 2; }
 	private int top() { return (height - panelHeight()) / 2; }
-	private int contentX() { return left() + 190; }
-	private int contentWidth() { return panelWidth() - 208; }
+	private int navX() { return left() + 14; }
+	private int contentX() { return left() + 212; }
+	private int contentWidth() { return panelWidth() - 234; }
 	private int bodyTop() { return top() + BODY_OFFSET; }
 
 	private FlatButton row(int x, int y, int w, String label, Runnable action) {
@@ -47,69 +59,109 @@ public class RadarScreen extends Screen {
 	protected void init() {
 		stats = BlockRadarClient.SCANNER.stats();
 		maxScroll = 0;
-		int panelLeft = left();
-		int navX = panelLeft + 14;
-		int mainX = contentX();
+		int sideX = navX();
 		int y = bodyTop();
 
-		row(navX, y, 162, "Radar", () -> {
+		row(sideX, y, 162, "Base Finder", () -> {
 			Settings.radarOn = !Settings.radarOn;
 			BlockRadarClient.saveSettings();
 			BlockRadarClient.SCANNER.clear();
 			rebuildWidgets();
 		}).dot(Theme.ACCENT).toggle(Settings.radarOn);
-		y += 28;
 
+		int rangeY = y + 48;
+		row(sideX, rangeY, 32, "-", () -> changeRange(-2)).primary();
+		row(sideX + 36, rangeY, 90, Settings.scanRange + " chunks", () -> { });
+		row(sideX + 130, rangeY, 32, "+", () -> changeRange(2)).primary();
+
+		int categoryY = y + 92;
 		for (Category category : Category.values()) {
 			int count = stats.byCategory().getOrDefault(category, 0);
-			row(navX, y, 124, menuLabel(category), () -> selectCategory(category))
+			row(sideX, categoryY, 124, menuLabel(category), () -> selectCategory(category))
 				.dot(category.color).detail(Format.count(count)).selected(selectedCategory == category);
-			row(navX + 128, y, 32, "", () -> {
+			row(sideX + 128, categoryY, 32, "", () -> {
 				category.enabled = !category.enabled;
 				BlockRadarClient.saveSettings();
 				stats = BlockRadarClient.SCANNER.stats();
 				rebuildWidgets();
 			}).toggle(category.enabled);
-			y += ROW_STEP;
+			categoryY += 28;
 		}
 
-		int contentY = bodyTop();
-		row(mainX, contentY, contentWidth(), "Show all highlighted", () -> choose(null))
-			.dot(Theme.ACCENT).detail(Format.count(stats.suspicious()))
+		int mainX = contentX();
+		FlatButton allCard = new FlatButton(mainX, y, contentWidth(), CARD_HEIGHT,
+			"All highlighted blocks", () -> choose(null));
+		allCard.dot(Theme.ACCENT).detail(Format.count(stats.suspicious())).toggle(BlockRadarClient.SCANNER.focus() == null)
+			.description(stats.suspiciousChunks() + " suspicious chunks in the current scan radius")
 			.selected(BlockRadarClient.SCANNER.focus() == null);
-		contentY += ROW_STEP + 4;
+		addRenderableWidget(allCard);
 
-		if (!selectedCategory.enabled) {
-			maxScroll = 0;
-		} else {
-			List<Map.Entry<Block, Integer>> blocks = categoryBlocks();
-			int footerTop = top() + panelHeight() - 40;
-			int visible = Math.max(1, (footerTop - contentY) / ROW_STEP);
-			maxScroll = Math.max(0, blocks.size() - visible);
-			scroll = Math.max(0, Math.min(scroll, maxScroll));
-			for (int i = scroll; i < Math.min(blocks.size(), scroll + visible); i++) {
-				Map.Entry<Block, Integer> entry = blocks.get(i);
-				Block block = entry.getKey();
-				int count = entry.getValue();
-				Category colorCategory = stats.blockCategories().getOrDefault(block, selectedCategory);
-				row(mainX, contentY, contentWidth(), block.getName().getString(), () -> choose(block))
-					.dot(colorCategory.color)
-					.detail(Format.count(count) + "  " + Format.percent(count, stats.suspicious()))
-					.share((double) count / Math.max(1, stats.suspicious()))
-					.selected(BlockRadarClient.SCANNER.focus() == block);
-				contentY += ROW_STEP;
-			}
+		List<Map.Entry<Block, Integer>> blocks = categoryBlocks();
+		int cardsY = y + CARD_STEP;
+		int footerTop = top() + panelHeight() - 42;
+		int visible = Math.max(1, (footerTop - cardsY) / CARD_STEP);
+		maxScroll = Math.max(0, blocks.size() - visible);
+		scroll = Math.max(0, Math.min(scroll, maxScroll));
+		for (int i = scroll; i < Math.min(blocks.size(), scroll + visible); i++) {
+			Map.Entry<Block, Integer> entry = blocks.get(i);
+			Block block = entry.getKey();
+			int count = entry.getValue();
+			Category colorCategory = stats.blockCategories().getOrDefault(block, selectedCategory);
+			boolean focused = BlockRadarClient.SCANNER.focus() == block;
+			String description = focused
+				? "This block type is the active highlight filter. Click to clear it."
+				: Format.percent(count, stats.suspicious()) + " of detected blocks · click to focus the outline";
+			FlatButton card = new FlatButton(mainX, cardsY + (i - scroll) * CARD_STEP,
+				contentWidth(), CARD_HEIGHT, block.getName().getString(), () -> choose(focused ? null : block));
+			card.dot(colorCategory.color).detail(Format.count(count)).toggle(focused)
+				.description(description).share((double) count / Math.max(1, stats.suspicious()));
+			addRenderableWidget(card);
+			row(mainX + contentWidth() - 82, cardsY + (i - scroll) * CARD_STEP + 18, 20, "",
+				() -> toggleFavorite(block)).star(FAVORITES.contains(block)).selected(FAVORITES.contains(block));
 		}
 
-		row(panelLeft + panelWidth() - 130, top() + panelHeight() - 34, 112, "Close", this::onClose).primary();
+		int searchWidth = Math.min(300, Math.max(150, panelWidth() - 440));
+		int searchX = left() + panelWidth() - searchWidth - 20;
+		searchBox = new EditBox(font, searchX, top() + 19, searchWidth, 27, Component.literal("Search blocks"));
+		searchBox.setMaxLength(64);
+		searchBox.setHint(Component.literal("Search blocks..."));
+		searchBox.setValue(searchQuery);
+		searchBox.setResponder(value -> {
+			pendingSearchQuery = value;
+			searchDirty = true;
+		});
+		addRenderableWidget(searchBox);
+
+		row(left() + panelWidth() - 130, top() + panelHeight() - 34, 112, "Close", this::onClose).primary();
+		if (contentWidth() >= 506) {
+			row(mainX + 394, top() + 78, 112, favoritesOnly ? "★ Favorites" : "☆ Favorites",
+				() -> { favoritesOnly = !favoritesOnly; scroll = 0; rebuildWidgets(); })
+				.selected(favoritesOnly);
+		}
+	}
+
+	private void changeRange(int delta) {
+		Settings.scanRange = Math.max(2, Math.min(32, Settings.scanRange + delta));
+		BlockRadarClient.saveSettings();
+		BlockRadarClient.SCANNER.clear();
+		rebuildWidgets();
 	}
 
 	private List<Map.Entry<Block, Integer>> categoryBlocks() {
 		List<Map.Entry<Block, Integer>> filtered = new ArrayList<>();
+		String query = searchQuery.toLowerCase(Locale.ROOT).trim();
 		for (Map.Entry<Block, Integer> entry : stats.byBlock()) {
-			if (stats.blockCategories().get(entry.getKey()) == selectedCategory) filtered.add(entry);
+			if (stats.blockCategories().get(entry.getKey()) != selectedCategory) continue;
+			if (favoritesOnly && !FAVORITES.contains(entry.getKey())) continue;
+			String name = entry.getKey().getName().getString().toLowerCase(Locale.ROOT);
+			if (query.isEmpty() || name.contains(query)) filtered.add(entry);
 		}
 		return filtered;
+	}
+
+	private void toggleFavorite(Block block) {
+		if (!FAVORITES.add(block)) FAVORITES.remove(block);
+		rebuildWidgets();
 	}
 
 	private static String menuLabel(Category category) {
@@ -143,9 +195,20 @@ public class RadarScreen extends Screen {
 
 	@Override
 	public void tick() {
+		if (searchDirty) {
+			searchDirty = false;
+			if (!searchQuery.equals(pendingSearchQuery)) {
+				searchQuery = pendingSearchQuery;
+				scroll = 0;
+				rebuildWidgets();
+				if (searchBox != null) searchBox.setFocused(true);
+			}
+		}
 		if (++ticks % 10 == 0) {
 			stats = BlockRadarClient.SCANNER.stats();
+			boolean searchFocused = searchBox != null && searchBox.isFocused();
 			rebuildWidgets();
+			if (searchFocused && searchBox != null) searchBox.setFocused(true);
 		}
 	}
 
@@ -157,10 +220,10 @@ public class RadarScreen extends Screen {
 		int w = panelWidth();
 		int h = panelHeight();
 		Theme.box(graphics, x, y, w, h, Theme.PANEL);
-		Theme.outline(graphics, x, y, w, h, 0x8855687E);
-		Theme.box(graphics, x + 14, y + 98, 162, h - 144, Theme.CARD);
-		Theme.box(graphics, x + 182, y + 98, w - 200, h - 144, Theme.CARD);
-		graphics.fill(x + 18, y + 3, x + w - 18, y + 4, Theme.ACCENT);
+		Theme.outline(graphics, x, y, w, h, 0x99647583);
+		Theme.box(graphics, x + 10, y + 10, 180, h - 20, Theme.CARD);
+		Theme.box(graphics, x + 198, y + 10, w - 208, h - 20, Theme.CARD);
+		graphics.fill(x + 14, y + 3, x + w - 14, y + 4, Theme.ACCENT);
 	}
 
 	@Override
@@ -169,29 +232,32 @@ public class RadarScreen extends Screen {
 		int panelLeft = left();
 		int panelTop = top();
 		int width = panelWidth();
-		Theme.text(graphics, font, "BLOCK RADAR", panelLeft + 20, panelTop + 17, Theme.TEXT);
-		Theme.text(graphics, font, "Live scan of nearby loaded chunks", panelLeft + 20, panelTop + 34,
-			Theme.MUTED);
-		Theme.pill(graphics, font, Settings.radarOn ? "●  ACTIVE" : "○  PAUSED",
-			panelLeft + width - 116, panelTop + 18, 96, Settings.radarOn ? 0xFF1D493F : 0xFF3A414C);
-		String summary = Format.count(stats.suspicious()) + " matches     "
-			+ Format.percent(stats.suspicious(), stats.blocks()) + " of scanned blocks";
-		Theme.text(graphics, font, summary, panelLeft + 20, panelTop + 56, Theme.TEXT);
-		Theme.bar(graphics, panelLeft + 20, panelTop + 76, width - 40,
-			(double) stats.suspicious() / Math.max(1, stats.blocks()), Theme.ACCENT);
-		Theme.text(graphics, font, "CATEGORIES", panelLeft + 18, panelTop + 85, Theme.MUTED);
-		Theme.text(graphics, font, selectedCategory.label.toUpperCase(), contentX(), panelTop + 85,
-			selectedCategory.color);
-		if (selectedCategory.enabled && categoryBlocks().isEmpty()) {
-			Theme.text(graphics, font, "No blocks found in this category yet.", contentX() + 8, bodyTop() + 37,
-				Theme.MUTED);
-		} else if (!selectedCategory.enabled) {
-			Theme.text(graphics, font, "Category is turned off.", contentX() + 8, bodyTop() + 37, Theme.MUTED);
-		}
+		int mainX = contentX();
+		Theme.text(graphics, font, "BLOCK RADAR", panelLeft + 24, panelTop + 18, Theme.TEXT);
+		Theme.text(graphics, font, "MODULES", panelLeft + 24, panelTop + 43, Theme.MUTED);
+		String heading = selectedCategory.label + " Modules";
+		Theme.text(graphics, font, font.plainSubstrByWidth(heading, Math.max(20, width - 550)),
+			mainX, panelTop + 20, selectedCategory.color);
+		Theme.text(graphics, font, "Click a card to focus its block outlines; toggle it again to clear the filter.",
+			mainX, panelTop + 48, Theme.MUTED);
+		Theme.pill(graphics, font, Format.count(stats.suspicious()) + " MATCHES", mainX, panelTop + 78,
+			116, 0xFF243342);
+		Theme.pill(graphics, font, stats.suspiciousChunks() + " CHUNKS", mainX + 124, panelTop + 78,
+			112, 0xFF243342);
+		Theme.pill(graphics, font, Settings.scanRange + " CHUNK RANGE", mainX + 244, panelTop + 78,
+			140, 0xFF243342);
+		Theme.text(graphics, font, "SCAN RANGE", navX(), bodyTop() + 31, Theme.MUTED);
+		Theme.text(graphics, font, "BLOCK CATEGORIES", navX(), bodyTop() + 75, Theme.MUTED);
 		String focus = "FILTER  ·  " + (BlockRadarClient.SCANNER.focus() == null ? "All highlighted blocks"
 			: BlockRadarClient.SCANNER.focus().getName().getString());
-		Theme.text(graphics, font, font.plainSubstrByWidth(focus, width - 170), panelLeft + 20,
-			panelTop + panelHeight() - 26, Theme.MUTED);
+		Theme.text(graphics, font, font.plainSubstrByWidth(focus, width - 170), panelLeft + 22,
+			panelTop + panelHeight() - 25, Theme.MUTED);
+		if (selectedCategory.enabled && categoryBlocks().isEmpty()) {
+			Theme.text(graphics, font, searchQuery.isEmpty() ? "No matches in this category yet."
+				: "No blocks match this search.", mainX + 12, bodyTop() + 48, Theme.MUTED);
+		} else if (!selectedCategory.enabled) {
+			Theme.text(graphics, font, "This category is disabled.", mainX + 12, bodyTop() + 48, Theme.MUTED);
+		}
 	}
 
 	@Override

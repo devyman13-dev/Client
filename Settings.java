@@ -13,6 +13,7 @@ public final class Settings {
 	private Settings() {}
 
 	public static boolean radarOn = true;
+	public static int scanRange = 8;
 	/** Full name of the only block to show, such as "minecraft:piston". Empty means all. */
 	public static String onlyBlock = "";
 
@@ -27,6 +28,7 @@ public final class Settings {
 			return;
 		}
 		radarOn = flag(saved, "radar", radarOn);
+		scanRange = Math.max(2, Math.min(32, integer(saved, "scanRange", scanRange)));
 		onlyBlock = saved.getProperty("onlyBlock", onlyBlock).trim();
 		for (Category category : Category.values()) {
 			category.enabled = flag(saved, "category." + category.name(), category.enabled);
@@ -36,6 +38,7 @@ public final class Settings {
 	public static void save(Path file) {
 		Properties saved = new Properties();
 		saved.setProperty("radar", Boolean.toString(radarOn));
+		saved.setProperty("scanRange", Integer.toString(scanRange));
 		saved.setProperty("onlyBlock", onlyBlock);
 		for (Category category : Category.values()) {
 			saved.setProperty("category." + category.name(), Boolean.toString(category.enabled));
@@ -55,5 +58,13 @@ public final class Settings {
 		if (value.equals("true")) return true;
 		if (value.equals("false")) return false;
 		return fallback;
+	}
+
+	private static int integer(Properties saved, String key, int fallback) {
+		try {
+			return Integer.parseInt(saved.getProperty(key, Integer.toString(fallback)).trim());
+		} catch (NumberFormatException e) {
+			return fallback;
+		}
 	}
 }

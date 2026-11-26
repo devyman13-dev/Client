@@ -38,7 +38,7 @@ public final class Scanner {
 	}
 
 	/** Totals for the menu. "blocks" is every non-air block scanned. */
-	public record Stats(long blocks, long suspicious, List<Map.Entry<Block, Integer>> byBlock,
+	public record Stats(long blocks, long suspicious, long suspiciousChunks, List<Map.Entry<Block, Integer>> byBlock,
 		Map<Category, Integer> byCategory, Map<Block, Category> blockCategories) {}
 
 	private final Map<Long, ChunkData> chunks = new HashMap<>();
@@ -47,12 +47,16 @@ public final class Scanner {
 	private final Map<Block, Rule> known = new IdentityHashMap<>();
 	private ClientLevel level;
 	private List<Hit> drawn = List.of();
+	private Set<Long> drawnChunks = Set.of();
+	private volatile Stats cachedStats = new Stats(0, 0, 0, List.of(), Map.of(), Map.of());
 	private int ticks;
 
 	/** If set, only this block type is highlighted. */
 	private Block focus;
 
 	public List<Hit> drawn() { return drawn; }
+	public Set<Long> drawnChunks() { return drawnChunks; }
+	public Stats cachedStats() { return cachedStats; }
 	public Block focus() { return focus; }
 
 	/** Brings back the block that was selected last time the game ran. */
@@ -73,6 +77,8 @@ public final class Scanner {
 		chunks.clear();
 		queue.clear();
 		drawn = List.of();
+		drawnChunks = Set.of();
+		cachedStats = new Stats(0, 0, 0, List.of(), Map.of(), Map.of());
 	}
 
 	public void tick(Minecraft client) {
@@ -96,11 +102,14 @@ public final class Scanner {
 			scanChunk(next[0], next[1]);
 		}
 
-		if (++ticks % 10 == 0) refreshDrawn(player);
+		if (++ticks % 10 == 0) {
+			refreshDrawn(player);
+			cachedStats = stats();
+		}
 	}
 
 	private void startSweep(Minecraft client, LocalPlayer player) {
-		int radius = client.options.getEffectiveRenderDistance();
+		int radius = Math.min(Settings.scanRange, client.options.getEffectiveRenderDistance());
 		int px = player.getBlockX() >> 4;
 		int pz = player.getBlockZ() >> 4;
 
@@ -191,29 +200,39 @@ public final class Scanner {
 		if (player == null) return;
 		BlockPos here = player.blockPosition();
 		List<Hit> all = new ArrayList<>();
-		for (ChunkData data : chunks.values()) {
-			for (Hit hit : data.hits()) if (visible(hit)) all.add(hit);
+		Set<Long> visibleChunks = new HashSet<>();
+		for (Map.Entry<Long, ChunkData> entry : chunks.entrySet()) {
+			for (Hit hit : entry.getValue().hits()) {
+				if (visible(hit)) {
+					all.add(hit);
+					visibleChunks.add(entry.getKey());
+				}
+			}
 		}
 		if (all.size() > MAX_DRAWN) {
 			all.sort(Comparator.comparingDouble(h -> h.pos().distSqr(here)));
 			all = new ArrayList<>(all.subList(0, MAX_DRAWN));
 		}
 		drawn = all;
+		drawnChunks = Set.copyOf(visibleChunks);
 	}
 
 	/** Counts everything scanned so far. Block types are listed biggest first. */
 	public Stats stats() {
 		long blocks = 0;
 		long suspicious = 0;
+		Set<Long> suspiciousChunkKeys = new HashSet<>();
 		Map<Block, Integer> counts = new HashMap<>();
 		Map<Category, Integer> categories = new EnumMap<>(Category.class);
 		Map<Block, Map<Category, Integer>> categoryCounts = new HashMap<>();
-		for (ChunkData data : chunks.values()) {
+		for (Map.Entry<Long, ChunkData> chunk : chunks.entrySet()) {
+			ChunkData data = chunk.getValue();
 			blocks += data.blocks();
 			for (Hit hit : data.hits()) {
 				categories.merge(hit.category(), 1, Integer::sum);
 				if (!hit.category().enabled) continue;
 				suspicious++;
+				suspiciousChunkKeys.add(chunk.getKey());
 				counts.merge(hit.block(), 1, Integer::sum);
 				categoryCounts.computeIfAbsent(hit.block(), ignored -> new EnumMap<>(Category.class))
 					.merge(hit.category(), 1, Integer::sum);
@@ -224,7 +243,7 @@ public final class Scanner {
 		Map<Block, Category> blockCategories = new HashMap<>();
 		categoryCounts.forEach((block, byCategory) -> blockCategories.put(block,
 			byCategory.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey()));
-		return new Stats(blocks, suspicious, byBlock, categories, blockCategories);
+		return new Stats(blocks, suspicious, suspiciousChunkKeys.size(), byBlock, categories, blockCategories);
 	}
 
 	/** Size of the touching group (including diagonals) of the same block as this hit. */

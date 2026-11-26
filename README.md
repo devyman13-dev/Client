@@ -34,6 +34,13 @@ in your `.minecraft/mods` folder.
 ## Menu
 - The top shows how many suspicious blocks were found and what percent of all scanned
   (non-air) blocks that is.
+- The menu follows the supplied Mist Client reference: a left module sidebar, live search,
+  favorite filter, and large block cards with counts, category color, star, and focus switch.
+- Scan range is adjustable in two-chunk steps up to 32 chunks, capped by the game's render
+  distance. The activity HUD reports matching blocks and suspicious chunks.
+- Suspicious chunks receive a blue full-height border, similar to Minecraft's F3+G chunk
+  borders; individual suspicious blocks keep their category colors. The activity HUD reports
+  the current suspicious chunk and block totals.
 - The menu has a floating, rounded dashboard with an active-state badge, category cards,
   and a scrollable block list. Click a category to filter its blocks; use the switch beside
   it to enable or disable that category.
@@ -51,7 +58,8 @@ in your `.minecraft/mods` folder.
 ## Limits
 - Only chunks the game has loaded can be scanned. On servers this may be less than your
   render distance.
-- Outlines are drawn for the nearest 2000 hits; counts include all hits.
+- Individual block outlines are limited to the nearest 2000 hits. Blue chunk borders are drawn
+  for every scanned chunk that contains an enabled suspicious block; counts include all hits.
 - "Native" is decided by the lists in `Rules.java`. Blocks not listed are treated as
   normal. Natural structures (ruined portals, villages, ancient cities) and trees on
   biome borders can be flagged.
