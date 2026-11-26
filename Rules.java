@@ -37,6 +37,13 @@ public final class Rules {
 		twisting_vines twisting_vines_plant nether_wart soul_fire
 		""");
 
+	/** Nether-looking blocks that also appear naturally around ruined portals in the Overworld. */
+	private static final Set<String> OVERWORLD_NETHER_FEATURES = words("""
+		fire soul_fire netherrack magma_block blackstone gilded_blackstone basalt smooth_basalt
+		nether_bricks nether_brick_slab nether_brick_stairs nether_brick_wall nether_brick_fence
+		cracked_nether_bricks chiseled_nether_bricks crying_obsidian
+		""");
+
 	private static final Set<String> END = words("""
 		end_stone end_stone_bricks purpur_block purpur_pillar purpur_stairs purpur_slab
 		chorus_plant chorus_flower end_rod dragon_egg
@@ -153,6 +160,7 @@ public final class Rules {
 	 * @return why the block should be highlighted, or null if it looks normal here
 	 */
 	public static Category classify(String block, String dimension, String biome, int y) {
+		if (dimension.equals("overworld") && OVERWORLD_NETHER_FEATURES.contains(block)) return null;
 		if (isRedstone(block)) return Category.REDSTONE;
 
 		boolean overworld = dimension.equals("overworld");

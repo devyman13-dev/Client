@@ -34,8 +34,9 @@ in your `.minecraft/mods` folder.
 ## Menu
 - The top shows how many suspicious blocks were found and what percent of all scanned
   (non-air) blocks that is.
-- The menu has a dark category sidebar and a scrollable block list. Click a category to
-  filter its blocks; use the switch beside it to enable or disable that category.
+- The menu has a floating, rounded dashboard with an active-state badge, category cards,
+  and a scrollable block list. Click a category to filter its blocks; use the switch beside
+  it to enable or disable that category.
 - Block dots and world outlines share category colors: red for redstone, purple for wrong
   dimension, orange for wrong biome, and cyan for player-placed candidates.
 - **Player-placed** covers ender chests (outside the End), shulker boxes, concrete,
@@ -43,6 +44,8 @@ in your `.minecraft/mods` folder.
   Y=20 or outside the Overworld.
   Normal and copper chests below Y=-35 are included too.
 - Click a block row to highlight only that block type; scroll the list for more.
+- Overworld fire and common ruined-portal blocks such as netherrack, magma, blackstone,
+  and portal nether bricks are ignored as natural features.
 - Redstone ore is never highlighted. Sculk is ignored where it grows naturally.
 
 ## Limits

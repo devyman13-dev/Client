@@ -19,7 +19,7 @@ public class FlatButton extends AbstractWidget {
 	private boolean selected;
 
 	public FlatButton(int x, int y, int width, String label, Runnable action) {
-		super(x, y, width, 18, Component.literal(label));
+		super(x, y, width, 22, Component.literal(label));
 		this.action = action;
 	}
 
@@ -46,34 +46,37 @@ public class FlatButton extends AbstractWidget {
 
 		if (primary) {
 			Theme.box(g, x, y, w, getHeight(), hover ? 0xFF6BA1FF : Theme.ACCENT);
-			Theme.centered(g, font, getMessage().getString(), x + w / 2, y + 5, Theme.TEXT);
+			Theme.centered(g, font, getMessage().getString(), x + w / 2, y + 7, Theme.TEXT);
 			return;
 		}
 
-		int background = selected ? 0xFF29384B : hover ? Theme.ROW_HOVER : Theme.ROW;
+		int background = selected ? 0xFF203246 : hover ? Theme.ROW_HOVER : Theme.ROW;
 		Theme.box(g, x, y, w, getHeight(), background);
-		if (selected) g.fill(x, y + 3, x + 2, y + getHeight() - 3, dot != 0 ? dot : Theme.ACCENT);
+		if (selected) {
+			Theme.box(g, x, y + 5, 3, getHeight() - 10, dot != 0 ? dot : Theme.ACCENT);
+			Theme.outline(g, x, y, w, getHeight(), 0x663C83CB);
+		}
 		int left = x + 7;
 		if (dot != 0) {
-			Theme.box(g, left, y + 6, 6, 6, dot);
-			left += 11;
+			Theme.box(g, left, y + 7, 8, 8, dot);
+			left += 13;
 		}
 
 		int right = x + w - 7;
 		if (switchState != null) {
-			right -= 18;
-			Theme.toggle(g, right, y + 4, switchState);
+			right -= 22;
+			Theme.toggle(g, right, y + 5, switchState);
 			right -= 6;
 		}
 		if (!detail.isEmpty()) {
 			right -= font.width(detail);
-			Theme.text(g, font, detail, right, y + 5, Theme.MUTED);
+			Theme.text(g, font, detail, right, y + 7, Theme.MUTED);
 			right -= 6;
 		}
 
 		String label = font.plainSubstrByWidth(getMessage().getString(), Math.max(0, right - left));
-		Theme.text(g, font, label, left, y + 5, Theme.TEXT);
-		if (share >= 0) Theme.bar(g, x + 7, y + 15, w - 14, share, dot != 0 ? dot : Theme.ACCENT);
+		Theme.text(g, font, label, left, y + 7, Theme.TEXT);
+		if (share >= 0) Theme.bar(g, x + 7, y + getHeight() - 3, w - 14, share, dot != 0 ? dot : Theme.ACCENT);
 	}
 
 	@Override
