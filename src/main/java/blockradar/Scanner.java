@@ -32,7 +32,10 @@ public final class Scanner {
 	private static final int MAX_DRAWN = 2000;
 
 	private record ChunkData(List<Hit> hits, int blocks) {}
-	private record Rule(Category category, boolean dependsOnPlace) {}
+	private record Rule(Category category, boolean dependsOnPlace) {
+		/** False if this block can never be highlighted in this dimension. */
+		boolean possible() { return category != null || dependsOnPlace; }
+	}
 
 	/** Totals for the menu. "blocks" is every non-air block scanned. */
 	public record Stats(long blocks, long suspicious, List<Map.Entry<Block, Integer>> byBlock,
@@ -154,7 +157,7 @@ public final class Scanner {
 			section.getStates().count((state, count) -> {
 				if (!state.isAir()) blocks[0] += count;
 			});
-			if (!section.maybeHas(state -> rule(state.getBlock(), dimension).category() != null)) continue;
+			if (!section.maybeHas(state -> rule(state.getBlock(), dimension).possible())) continue;
 			int baseY = chunk.getSectionYFromSectionIndex(i) << 4;
 
 			for (int y = 0; y < 16; y++) {
@@ -162,8 +165,8 @@ public final class Scanner {
 					for (int x = 0; x < 16; x++) {
 						BlockState state = section.getBlockState(x, y, z);
 						Rule rule = rule(state.getBlock(), dimension);
+						if (!rule.possible()) continue;
 						Category category = rule.category();
-						if (category == null) continue;
 						pos.set((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
 						// The biome is only looked up for blocks that depend on it.
 						if (rule.dependsOnPlace()) {

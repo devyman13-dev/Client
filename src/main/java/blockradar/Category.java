@@ -5,7 +5,7 @@ public enum Category {
 	REDSTONE("Redstone", 0xFFFF4D5E, true),
 	WRONG_DIMENSION("Wrong dimension", 0xFFB872FF, true),
 	WRONG_BIOME("Wrong biome", 0xFFFFB347, true),
-	CRAFTED("Crafted blocks", 0xFF3DD6F5, false);
+	PLACED("Player-placed", 0xFF3DD6F5, true);
 
 	public final String label;
 	public final int color;

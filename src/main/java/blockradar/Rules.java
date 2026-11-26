@@ -78,16 +78,31 @@ public final class Rules {
 		biome("cave_vines cave_vines_plant spore_blossom big_dripleaf big_dripleaf_stem small_dripleaf", "lush_caves");
 	}
 
-	private static final Set<String> CRAFTED = words("""
-		cobblestone crafting_table furnace blast_furnace smoker chest ender_chest barrel
-		anvil chipped_anvil damaged_anvil beacon enchanting_table brewing_stand bookshelf
-		torch wall_torch ladder scaffolding iron_block gold_block diamond_block
-		emerald_block netherite_block lapis_block glass glass_pane
+	/** Blocks that world generation never places, so a player must have put them there. */
+	private static final Set<String> NEVER_GENERATED = words("""
+		beacon conduit netherite_block respawn_anchor lodestone enchanting_table
+		bamboo_mosaic bamboo_mosaic_slab bamboo_mosaic_stairs
+		resin_bricks resin_brick_slab resin_brick_stairs resin_brick_wall chiseled_resin_bricks
 		""");
 
-	private static final List<String> CRAFTED_ENDINGS = List.of(
-		"_planks", "_concrete", "_wool", "_carpet", "_stained_glass",
-		"_stained_glass_pane", "_bed", "shulker_box");
+	private static final List<String> NEVER_GENERATED_ENDINGS =
+		List.of("shulker_box", "_concrete", "_concrete_powder");
+
+	/** Deepslate tiles and other variants that structures only use deep underground. */
+	private static final Set<String> DEEPSLATE_BUILDING = words("""
+		cobbled_deepslate cobbled_deepslate_slab cobbled_deepslate_stairs cobbled_deepslate_wall
+		polished_deepslate polished_deepslate_slab polished_deepslate_stairs polished_deepslate_wall
+		deepslate_bricks cracked_deepslate_bricks deepslate_brick_slab deepslate_brick_stairs
+		deepslate_brick_wall deepslate_tiles cracked_deepslate_tiles deepslate_tile_slab
+		deepslate_tile_stairs deepslate_tile_wall chiseled_deepslate
+		""");
+
+	/** Normal and copper chests lower than this are highlighted. */
+	private static final int DEEP_CHEST_Y = -35;
+
+	private static boolean isChest(String block) {
+		return block.equals("chest") || block.endsWith("copper_chest");
+	}
 
 	private static boolean endsWithAny(String name, List<String> endings) {
 		for (String ending : endings) if (name.endsWith(ending)) return true;
@@ -103,8 +118,15 @@ public final class Rules {
 		return OVERWORLD.contains(block) || block.endsWith("_log") || block.endsWith("_leaves");
 	}
 
-	private static boolean isCrafted(String block) {
-		return CRAFTED.contains(block) || endsWithAny(block, CRAFTED_ENDINGS);
+	private static boolean isPlaced(String block, String dimension, String biome, int y) {
+		// Ancient cities and trial chambers are built from these.
+		if (DEEPSLATE_BUILDING.contains(block)) {
+			return !(dimension.equals("overworld") && (biome.equals("deep_dark") || y < 20));
+		}
+		if (isChest(block)) return dimension.equals("overworld") && y < DEEP_CHEST_Y;
+		// Ender chests generate in End cities.
+		if (block.equals("ender_chest")) return !dimension.equals("the_end");
+		return NEVER_GENERATED.contains(block) || endsWithAny(block, NEVER_GENERATED_ENDINGS);
 	}
 
 	/**
@@ -120,7 +142,8 @@ public final class Rules {
 
 	/** True if the answer for this block can change with the biome or height. */
 	public static boolean dependsOnPlace(String block) {
-		return BIOME_BLOCKS.containsKey(block) || SCULK.contains(block);
+		return BIOME_BLOCKS.containsKey(block) || SCULK.contains(block)
+			|| DEEPSLATE_BUILDING.contains(block) || isChest(block);
 	}
 
 	/**
@@ -153,6 +176,6 @@ public final class Rules {
 			List<String> homes = BIOME_BLOCKS.get(block);
 			if (homes != null && homes.stream().noneMatch(biome::contains)) return Category.WRONG_BIOME;
 		}
-		return isCrafted(block) ? Category.CRAFTED : null;
+		return isPlaced(block, dimension, biome, y) ? Category.PLACED : null;
 	}
 }
