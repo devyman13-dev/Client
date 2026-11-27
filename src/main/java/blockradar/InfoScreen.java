@@ -49,7 +49,9 @@ public class InfoScreen extends Screen {
 	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		// No super call: the world stays clear behind the corner panel.
 		Theme.box(graphics, left(), top(), PANEL_WIDTH, PANEL_HEIGHT, Theme.PANEL);
-		graphics.fill(left() + 10, top(), left() + PANEL_WIDTH - 10, top() + 2, hit.color());
+		Theme.frame(graphics, left(), top(), PANEL_WIDTH, PANEL_HEIGHT, hit.color());
+		graphics.fill(left() + 10, top() + 2, left() + PANEL_WIDTH - 10, top() + 3, Theme.EDGE);
+		graphics.fill(left() + 10, top() + 2, left() + PANEL_WIDTH / 3, top() + 3, hit.color());
 	}
 
 	private void line(GuiGraphics graphics, String name, String value, int y) {

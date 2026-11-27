@@ -42,21 +42,23 @@ public final class RadarHud {
 
 		Font font = client.font;
 		String fps = client.getFps() + " FPS";
-		int width = Math.max(110, font.width("Block Radar") + font.width(fps) + 22);
-		for (Line line : lines) width = Math.max(width, font.width(line.name()) + font.width(line.value()) + 22);
+		int width = Math.max(132, font.width("BLOCK RADAR") + font.width(fps) + 38);
+		for (Line line : lines) width = Math.max(width, font.width(line.name()) + font.width(line.value()) + 30);
 
 		int x = 4;
 		int y = 4;
-		int height = 17 + lines.size() * 11 + (lines.isEmpty() ? 0 : 2);
+		int height = 20 + lines.size() * 12 + (lines.isEmpty() ? 0 : 2);
 		g.fill(x, y, x + width, y + height, Theme.HUD);
-		g.fill(x, y, x + 2, y + height, Theme.accent());
-		Theme.text(g, font, "Block Radar", x + 8, y + 5, Theme.accent());
-		Theme.text(g, font, fps, x + width - 6 - font.width(fps), y + 5, Theme.MUTED);
-		int lineY = y + 17;
+		Theme.frame(g, x, y, width, height, Theme.accent());
+		g.fill(x + 7, y + 6, x + 11, y + 10, 0xFF4AFFA8);
+		Theme.text(g, font, "BLOCK RADAR", x + 16, y + 4, Theme.accent());
+		Theme.text(g, font, fps, x + width - 8 - font.width(fps), y + 4, Theme.MUTED);
+		g.fill(x + 7, y + 17, x + width - 7, y + 18, Theme.EDGE);
+		int lineY = y + 22;
 		for (Line line : lines) {
 			Theme.text(g, font, line.name(), x + 8, lineY, line.color());
-			Theme.text(g, font, line.value(), x + width - 6 - font.width(line.value()), lineY, Theme.TEXT);
-			lineY += 11;
+			Theme.text(g, font, line.value(), x + width - 8 - font.width(line.value()), lineY, Theme.TEXT);
+			lineY += 12;
 		}
 	}
 }

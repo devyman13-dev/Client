@@ -57,9 +57,9 @@ public final class Scanner {
 		final List<Hit> hits = new ArrayList<>();
 	}
 	private record ChunkData(Map<Key, Tally> tallies, int blocks) {}
-	private record Rule(Category category, boolean dependsOnPlace, int color, boolean picked, int mapColor) {
-		/** False if this block can never be highlighted in this dimension. */
-		boolean possible() { return picked || category != null || dependsOnPlace; }
+	private record Rule(Category category, boolean dependsOnHeight, int color, boolean picked, int mapColor) {
+		/** False if this block can never be highlighted by the selected rules. */
+		boolean possible() { return picked || category != null || dependsOnHeight; }
 	}
 
 	/**
@@ -72,7 +72,7 @@ public final class Scanner {
 
 	private final Map<Long, ChunkData> chunks = new HashMap<>();
 	private final ArrayDeque<int[]> queue = new ArrayDeque<>();
-	/** Rules result per block for the current dimension, so each block is only checked once. */
+	/** Rules result per block, so each block is only checked once. */
 	private final Map<Block, Rule> known = new IdentityHashMap<>();
 	private ClientLevel level;
 	private List<Hit> drawn = List.of();
@@ -193,17 +193,13 @@ public final class Scanner {
 		return id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id;
 	}
 
-	private static String blockName(Block block) {
-		return path(BuiltInRegistries.BLOCK.getKey(block).toString());
-	}
-
-	/** What the rules say about a block before looking at where it is. */
-	private Rule rule(Block block, String dimension) {
+	/** What the rules say about a block before checking its height, when relevant. */
+	private Rule rule(Block block) {
 		return known.computeIfAbsent(block, b -> {
 			String id = BuiltInRegistries.BLOCK.getKey(b).toString();
 			String name = path(id);
 			boolean picked = Settings.picked.contains(id) && Picks.allowed(name);
-			return new Rule(Rules.classify(name, dimension, "", Integer.MAX_VALUE), Rules.dependsOnPlace(name),
+			return new Rule(Rules.classify(name, "", "", Integer.MAX_VALUE), Rules.dependsOnHeight(name),
 				Colors.of(name), picked, b.defaultMapColor().col);
 		});
 	}
@@ -223,7 +219,6 @@ public final class Scanner {
 			return;
 		}
 
-		String dimension = path(level.dimension().identifier().toString());
 		Map<Key, Tally> tallies = new HashMap<>();
 		int[] blocks = {0};
 		LevelChunkSection[] sections = chunk.getSections();
@@ -245,7 +240,7 @@ public final class Scanner {
 			section.getStates().count((state, count) -> {
 				if (!state.isAir()) blocks[0] += count;
 			});
-			if (!section.maybeHas(state -> rule(state.getBlock(), dimension).possible())) continue;
+			if (!section.maybeHas(state -> rule(state.getBlock()).possible())) continue;
 			int baseY = chunk.getSectionYFromSectionIndex(i) << 4;
 
 			for (int y = 0; y < 16; y++) {
@@ -253,14 +248,12 @@ public final class Scanner {
 					for (int x = 0; x < 16; x++) {
 						BlockState state = section.getBlockState(x, y, z);
 						Block block = state.getBlock();
-						Rule rule = rule(block, dimension);
+						Rule rule = rule(block);
 						if (!rule.possible()) continue;
 						Category category = rule.category();
 						pos.set((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
-						// The biome is only looked up for blocks that depend on it.
-						if (rule.dependsOnPlace()) {
-							String biome = path(level.getBiome(pos).getRegisteredName());
-							category = Rules.classify(blockName(block), dimension, biome, pos.getY());
+						if (rule.dependsOnHeight()) {
+							category = Rules.classify(path(BuiltInRegistries.BLOCK.getKey(block).toString()), "", "", pos.getY());
 						}
 						if (category == null && !rule.picked()) continue;
 

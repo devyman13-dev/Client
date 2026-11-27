@@ -39,7 +39,7 @@ public class ChunkScreen extends Screen {
 				row.block().getName().getString(), () -> {
 					BlockRadarClient.SCANNER.setFocus(row.block());
 					onClose();
-				}).detail(Format.count(row.count())).lit(true).color(row.color());
+				}).icon(row.block()).detail(Format.count(row.count())).lit(true).color(row.color());
 			addRenderableWidget(button);
 		}
 
@@ -64,7 +64,9 @@ public class ChunkScreen extends Screen {
 	public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		// No super call: the world stays clear behind the corner panel.
 		Theme.box(graphics, left(), MARGIN, panelWidth(), panelHeight, Theme.PANEL);
-		graphics.fill(left() + 10, MARGIN, left() + panelWidth() - 10, MARGIN + 2, Theme.accent());
+		Theme.frame(graphics, left(), MARGIN, panelWidth(), panelHeight, Theme.accent());
+		graphics.fill(left() + 10, MARGIN + 2, left() + panelWidth() - 10, MARGIN + 3, Theme.EDGE);
+		graphics.fill(left() + 10, MARGIN + 2, left() + panelWidth() / 3, MARGIN + 3, Theme.accent());
 	}
 
 	@Override

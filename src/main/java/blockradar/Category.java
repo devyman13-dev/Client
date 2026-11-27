@@ -4,8 +4,6 @@ package blockradar;
 public enum Category {
 	REDSTONE("Redstone", 0xFFFF4D5E, true),
 	STORAGE("Storage items", 0xFFFFD54D, true),
-	WRONG_DIMENSION("Wrong dimension", 0xFFB872FF, true),
-	WRONG_BIOME("Wrong biome", 0xFFFFB347, true),
 	PLACED("Player-placed", 0xFF3DD6F5, true),
 	/** Blocks chosen in the block list. */
 	PICKED("My blocks", 0xFF7CF29A, true);

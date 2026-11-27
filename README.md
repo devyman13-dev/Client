@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `Basefinder-jar`. Unzip it to get `blockradar-1.12.0.jar`.
+   `Basefinder-jar`. Unzip it to get `blockradar-1.13.0.jar`.
 
 ### Option B: build on your computer
 1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.12.0.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.13.0.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.12.0.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.13.0.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)
@@ -49,17 +49,20 @@ to move a panel, right click a title to fold it, Esc to close. Positions are rem
   it. Scroll for more.
 - The HUD shows FPS and counts in the top left.
 - **Pick blocks...**: a searchable Xray-style grid with an icon for every non-air block in the
-  registry, including ores and modded blocks. Hover an icon for its name and click to toggle that
-  block. The clicked-chunk details also show each block's icon and count. Picks are saved under
-  **My blocks**. To see only your picks, switch the other categories off. For very common blocks, every one is
-  counted but only up to 256 per chunk get positions (group sizes then show a "+").
+  registry, including ores and modded blocks. Blocks with no item (such as water) show a
+  stand-in item or a color square. Hover an icon for its name and click to toggle that block.
+  The clicked-chunk details also show each block's icon and count. Picks are saved under
+  **My blocks**. To see only your picks, switch the other categories off. For very common
+  blocks, every one is counted but only up to 256 per chunk get positions (group sizes then
+  show a "+").
 - Each block has its own highlight color, set in `Colors.java`.
 - Every scanned chunk with a highlighted block is marked in blue, from the bottom of the
   world to halfway up (Y=128 in the Overworld). SOLID fills it (walls hide the fill, and chunks within 8 blocks of you
   are not filled) and adds an outline that shows through walls. LINES is the outline only.
 - **Storage items**: chests, trapped chests, ender chests, barrels and shulker boxes.
-- Copper blocks and lightning rods are never highlighted.
-- Redstone ore is never highlighted. Sculk is ignored where it grows naturally.
+- Copper blocks and lightning rods are only highlighted if you pick them.
+- Redstone ore is only highlighted if you pick it. Sculk is not highlighted, apart from
+  calibrated sculk sensors, which count as redstone.
 - **Player-placed** covers concrete, beacons and other blocks that never generate, plus
   deepslate tiles and variants above Y=20.
 
