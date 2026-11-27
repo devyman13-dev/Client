@@ -18,18 +18,27 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Block;
 
-/** Searchable Xray-style grid of block icons. Click an icon to toggle that block. */
+/**
+ * Searchable grid of block icons, used for two lists: the blocks to look for, and the blocks
+ * to hide. Click an icon to add it to the list or take it off.
+ */
 public class BlockPickerScreen extends Screen {
 	private static final int TOP = 44;
 	private static final int BOTTOM = 36;
 	private static final int TILE = 32;
 	private static final int GAP = 3;
 	private static final int ON_COLOR = 0xFF55C9FF;
+	private static final int HIDDEN_COLOR = 0xFFFF4D5E;
 
 	private final Screen parent;
 	private final List<Block> all = new ArrayList<>();
 	private final List<IconButton> tiles = new ArrayList<>();
-	private final Set<String> before = new HashSet<>(Settings.picked);
+	/** True for the "hide blocks" menu. */
+	private final boolean hiding;
+	/** The list this menu changes. */
+	private final Set<String> chosen;
+	private final Set<String> pickedBefore = new HashSet<>(Settings.picked);
+	private final Set<String> hiddenBefore = new HashSet<>(Settings.hidden);
 	private List<Block> matches = new ArrayList<>();
 	private EditBox search;
 	private String query = "";
@@ -40,9 +49,11 @@ public class BlockPickerScreen extends Screen {
 	private int left;
 	private int gridWidth;
 
-	public BlockPickerScreen(Screen parent) {
-		super(Component.literal("Pick blocks"));
+	public BlockPickerScreen(Screen parent, boolean hiding) {
+		super(Component.literal(hiding ? "Hide blocks" : "Pick blocks"));
 		this.parent = parent;
+		this.hiding = hiding;
+		this.chosen = hiding ? Settings.hidden : Settings.picked;
 		for (Block block : BuiltInRegistries.BLOCK) {
 			if (!block.defaultBlockState().isAir()) all.add(block);
 		}
@@ -72,15 +83,29 @@ public class BlockPickerScreen extends Screen {
 		addRenderableWidget(search);
 
 		int y = this.height - 23;
-		addRenderableWidget(new FlatButton(this.width / 2 - 104, y, 100, "Clear all", () -> {
-			Settings.picked.clear(); filter();
+		addRenderableWidget(new FlatButton(this.width / 2 - 104, y, 100, hiding ? "Show all" : "Clear all", () -> {
+			chosen.clear(); filter();
 		}).primary());
 		addRenderableWidget(new FlatButton(this.width / 2 + 4, y, 100, "Done", this::onClose).primary());
 		filter();
 		setInitialFocus(search);
 	}
 
-	private boolean selected(Block block) { return Settings.picked.contains(id(block)); }
+	private boolean selected(Block block) { return chosen.contains(id(block)); }
+
+	/** In the hide menu, blocks the radar flags come early, as they are the ones on screen. */
+	private boolean likelyWanted(Block block) {
+		return hiding && (Settings.picked.contains(id(block))
+			|| Rules.classify(path(block), "", "", Integer.MAX_VALUE) != null);
+	}
+
+	/** A block is on one list at most: picking it unhides it, and hiding it unpicks it. */
+	private void toggle(Block block) {
+		String key = id(block);
+		if (chosen.remove(key)) return;
+		chosen.add(key);
+		(hiding ? Settings.picked : Settings.hidden).remove(key);
+	}
 
 	private void filter() {
 		String wanted = query.trim().toLowerCase(Locale.ROOT).replace('_', ' ');
@@ -90,6 +115,7 @@ public class BlockPickerScreen extends Screen {
 				|| path(block).replace('_', ' ').contains(wanted)) matches.add(block);
 		}
 		matches.sort(Comparator.comparing((Block block) -> !selected(block))
+			.thenComparing(block -> !likelyWanted(block))
 			.thenComparing(block -> block.getName().getString(), String.CASE_INSENSITIVE_ORDER)
 			.thenComparing(BlockPickerScreen::path, String.CASE_INSENSITIVE_ORDER));
 		showTiles();
@@ -107,8 +133,7 @@ public class BlockPickerScreen extends Screen {
 			int x = left + (i - first) % columns * (TILE + GAP);
 			int y = TOP + (i - first) / columns * (TILE + GAP);
 			IconButton tile = new IconButton(x, y, block, () -> {
-				String key = id(block);
-				if (!Settings.picked.remove(key)) Settings.picked.add(key);
+				toggle(block);
 				filter();
 			});
 			tiles.add(addRenderableWidget(tile));
@@ -129,15 +154,16 @@ public class BlockPickerScreen extends Screen {
 		@Override
 		protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
 			boolean on = selected(block);
+			int mark = hiding ? HIDDEN_COLOR : ON_COLOR;
 			boolean hover = isHoveredOrFocused();
-			int bg = on ? 0xD0143145 : hover ? Theme.ROW_HOVER : 0xA5081722;
+			int bg = on ? (hiding ? 0xD0451420 : 0xD0143145) : hover ? Theme.ROW_HOVER : 0xA5081722;
 			Theme.box(g, getX(), getY(), TILE, TILE, bg);
 			g.fill(getX() + 5, getY() + 5, getX() + TILE - 5, getY() + 6, Theme.GRID_LINE);
 			if (on) {
-				g.fill(getX(), getY(), getX() + TILE, getY() + 2, ON_COLOR);
-				g.fill(getX(), getY() + TILE - 2, getX() + TILE, getY() + TILE, ON_COLOR);
-				g.fill(getX(), getY(), getX() + 2, getY() + TILE, ON_COLOR);
-				g.fill(getX() + TILE - 2, getY(), getX() + TILE, getY() + TILE, ON_COLOR);
+				g.fill(getX(), getY(), getX() + TILE, getY() + 2, mark);
+				g.fill(getX(), getY() + TILE - 2, getX() + TILE, getY() + TILE, mark);
+				g.fill(getX(), getY(), getX() + 2, getY() + TILE, mark);
+				g.fill(getX() + TILE - 2, getY(), getX() + TILE, getY() + TILE, mark);
 			}
 			Icons.draw(g, block, getX() + 8, getY() + 8);
 		}
@@ -173,17 +199,20 @@ public class BlockPickerScreen extends Screen {
 	public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		super.render(graphics, mouseX, mouseY, delta);
 		Theme.centered(graphics, this.font,
-			"Pick blocks  •  " + Format.count(matches.size()) + " blocks  •  hover for name, click to toggle",
+			this.title.getString() + "  •  " + Format.count(chosen.size()) + (hiding ? " hidden" : " picked")
+				+ "  •  click to " + (hiding ? "hide or show" : "toggle"),
 			this.width / 2, 8, Theme.TEXT);
 		if (matches.isEmpty()) Theme.centered(graphics, this.font, "No blocks match", this.width / 2, TOP + 6, Theme.MUTED);
 	}
 
 	@Override
 	public void removed() {
-		if (before.equals(Settings.picked)) return;
-		if (!before.containsAll(Settings.picked)) Category.PICKED.enabled = true;
-		before.clear(); before.addAll(Settings.picked);
+		if (pickedBefore.equals(Settings.picked) && hiddenBefore.equals(Settings.hidden)) return;
+		if (!pickedBefore.containsAll(Settings.picked)) Category.PICKED.enabled = true;
+		pickedBefore.clear(); pickedBefore.addAll(Settings.picked);
+		hiddenBefore.clear(); hiddenBefore.addAll(Settings.hidden);
 		BlockRadarClient.SCANNER.rescan();
+		// Also saves the settings.
 		BlockRadarClient.SCANNER.setFocus(null);
 	}
 

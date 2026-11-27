@@ -28,6 +28,15 @@ public final class Settings {
 	public static int chunkBlocks = 64;
 	public static Accent accent = Accent.BLUE;
 
+	/** Freecam: speed in blocks per second, the sprint-key boost, and a few options. */
+	public static int freecamSpeed = 12;
+	public static int freecamBoost = 3;
+	public static boolean freecamSmooth = true;
+	/** Leave freecam when your character takes damage. */
+	public static boolean freecamExitOnHurt = true;
+	/** Turn your character back to where it faced when freecam was turned on. */
+	public static boolean freecamRestoreView = true;
+
 	/** Performance: the most boxes and chunks drawn, nearest first. */
 	public static int maxOutlines = 600;
 	public static int maxChunks = 64;
@@ -39,6 +48,8 @@ public final class Settings {
 	public static String onlyBlock = "";
 	/** Full names of the blocks chosen in the block list. */
 	public static final Set<String> picked = new LinkedHashSet<>();
+	/** Full names of the blocks the player does not want to see. */
+	public static final Set<String> hidden = new LinkedHashSet<>();
 	/** Menu panel positions (-1 means not moved yet) and whether each panel is unfolded. */
 	public static final int[] panelX = {-1, -1, -1, -1};
 	public static final int[] panelY = {-1, -1, -1, -1};
@@ -66,6 +77,11 @@ public final class Settings {
 			if (value.name().equals(saved.getProperty("accent", "").trim())) accent = value;
 		}
 		chunkBlocks = ranged(saved, "chunkBlocks", chunkBlocks, 0, ChunkStyle.MOST_BLOCKS);
+		freecamSpeed = ranged(saved, "freecamSpeed", freecamSpeed, 1, 60);
+		freecamBoost = ranged(saved, "freecamBoost", freecamBoost, 1, 8);
+		freecamSmooth = flag(saved, "freecamSmooth", freecamSmooth);
+		freecamExitOnHurt = flag(saved, "freecamExitOnHurt", freecamExitOnHurt);
+		freecamRestoreView = flag(saved, "freecamRestoreView", freecamRestoreView);
 		maxOutlines = ranged(saved, "maxOutlines", maxOutlines, 100, 2000);
 		maxChunks = ranged(saved, "maxChunks", maxChunks, 8, 256);
 		scanMillis = ranged(saved, "scanMillis", scanMillis, 1, 8);
@@ -75,6 +91,11 @@ public final class Settings {
 		if (chosen != null) {
 			picked.clear();
 			for (String id : chosen.split(",")) if (!id.isBlank()) picked.add(id.trim());
+		}
+		String unwanted = saved.getProperty("hidden");
+		if (unwanted != null) {
+			hidden.clear();
+			for (String id : unwanted.split(",")) if (!id.isBlank()) hidden.add(id.trim());
 		}
 		for (Category category : Category.values()) {
 			category.enabled = flag(saved, "category." + category.name(), category.enabled);
@@ -96,12 +117,18 @@ public final class Settings {
 		saved.setProperty("chunks", chunks.name());
 		saved.setProperty("accent", accent.name());
 		saved.setProperty("chunkBlocks", Integer.toString(chunkBlocks));
+		saved.setProperty("freecamSpeed", Integer.toString(freecamSpeed));
+		saved.setProperty("freecamBoost", Integer.toString(freecamBoost));
+		saved.setProperty("freecamSmooth", Boolean.toString(freecamSmooth));
+		saved.setProperty("freecamExitOnHurt", Boolean.toString(freecamExitOnHurt));
+		saved.setProperty("freecamRestoreView", Boolean.toString(freecamRestoreView));
 		saved.setProperty("maxOutlines", Integer.toString(maxOutlines));
 		saved.setProperty("maxChunks", Integer.toString(maxChunks));
 		saved.setProperty("scanMillis", Integer.toString(scanMillis));
 		saved.setProperty("rescanSeconds", Integer.toString(rescanSeconds));
 		saved.setProperty("onlyBlock", onlyBlock);
 		saved.setProperty("picked", String.join(",", picked));
+		saved.setProperty("hidden", String.join(",", hidden));
 		for (Category category : Category.values()) {
 			saved.setProperty("category." + category.name(), Boolean.toString(category.enabled));
 		}

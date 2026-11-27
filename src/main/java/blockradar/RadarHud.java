@@ -37,6 +37,10 @@ public final class RadarHud {
 
 	public static void render(GuiGraphics g, DeltaTracker delta) {
 		Minecraft client = Minecraft.getInstance();
+		if (Freecam.active() && client.player != null && client.screen == null && !client.options.hideGui) {
+			Theme.centered(g, client.font, "FREECAM  " + Settings.freecamSpeed + " b/s",
+				client.getWindow().getGuiScaledWidth() / 2, 6, Theme.accent());
+		}
 		if (!Settings.hud || !Settings.radarOn || client.player == null || client.screen != null
 			|| client.options.hideGui || client.getDebugOverlay().showDebugScreen()) return;
 

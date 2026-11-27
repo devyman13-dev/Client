@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `Basefinder-jar`. Unzip it to get `blockradar-1.16.0.jar`.
+   `Basefinder-jar`. Unzip it to get `blockradar-1.18.0.jar`.
 
 ### Option B: build on your computer
 1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.16.0.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.18.0.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.16.0.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.18.0.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)
@@ -32,16 +32,28 @@ in your `.minecraft/mods` folder.
 | See a highlighted block's counts | Left click it from a distance, or sneak + left click up close |
 | List a chunk's suspicious blocks | Left click a blue chunk when no block is in reach |
 | List your own chunk's suspicious blocks | N |
+| Freecam on/off | H |
 
 A normal left click on a block in reach always breaks it. A "Left click to see" message
 shows above the hotbar when a click would open something. Counts appear in the top right.
 The chunk list shows only the highlighted blocks in that chunk (including your picks).
 Click a row to show only that block.
 
+## Freecam
+Press H (or click **Freecam** in the Render panel) to fly the camera through walls and
+underground while your character stays where it is. WASD moves along where you look, Space
+goes up, Shift goes down, and holding sprint multiplies the speed. The radar keeps working and
+scans around the camera, so you can fly down to highlighted blocks and look at them. Left click
+a highlighted block or blue chunk from the camera to open its counts. Digging, hitting and using
+items are blocked while it is on. Right click **Freecam** in the menu for its settings: speed,
+sprint boost, smooth movement, leave on damage, and keeping your view. Your character is still
+in the world, so it can be hurt, and turning the mouse also turns your character.
+
 ## Menu
 Press J. Left click a row to use it, right click (or click its +) for settings, drag a title
 to move a panel, right click a title to fold it, Esc to close. Positions are remembered.
-- **Finder**: Redstone, Storage, Placed, My blocks. Blocks are not filtered by dimension or biome.
+- **Finder**: Redstone, Storage, Placed, My blocks, Pick blocks, Hide blocks. Blocks are not
+  filtered by dimension or biome.
 - **Render**: Radar on/off, Block ESP (fill, max boxes), Chunks (SOLID, LINES, OFF; max
   chunks), HUD, Click hints.
 - **Settings**: performance preset, scan time, rescan pause, menu color, reset layout.
@@ -61,6 +73,11 @@ to move a panel, right click a title to fold it, Esc to close. Positions are rem
   enchanting tables, hoppers and large amounts of storage count a lot. Chests, pistons and
   other blocks that structures also contain count less. It is a rough score, not a real
   probability, and it never goes above 95%. The numbers are in `BaseChance.java`.
+- **Hide blocks...**: the same kind of grid for blocks you do not want to see. Click a block to
+  hide it (red), click again to show it, or use **Show all**. Hidden blocks get no boxes, do not
+  mark chunks blue, and are left out of counts, chunk lists and the base chance. Blocks the
+  radar flags are listed first. Hiding a torch, sign or banner also hides its wall version, and
+  hiding either piston also hides piston heads. A block cannot be both picked and hidden.
 - Each block has its own highlight color, set in `Colors.java`.
 - Every scanned chunk with a highlighted block is marked in blue, from the bottom of the
   world to 64 blocks above sea level (Y=128). To change the height, press J, right click

@@ -12,6 +12,11 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.event.client.player.ClientPreAttackCallback;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -20,7 +25,9 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.gizmos.GizmoStyle;
 import net.minecraft.gizmos.Gizmos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -64,13 +71,29 @@ public class BlockRadarClient implements ClientModInitializer {
 		KeyMapping chunkKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.chunk", InputConstants.KEY_N, keys));
 
+		KeyMapping freecamKey = KeyBindingHelper.registerKeyBinding(
+			new KeyMapping("key.blockradar.freecam", InputConstants.KEY_H, keys));
+
+		// While the camera is flying, your character must not dig, hit or use anything.
+		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) ->
+			Freecam.active() ? InteractionResult.FAIL : InteractionResult.PASS);
+		AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) ->
+			Freecam.active() ? InteractionResult.FAIL : InteractionResult.PASS);
+		UseBlockCallback.EVENT.register((player, world, hand, hit) ->
+			Freecam.active() ? InteractionResult.FAIL : InteractionResult.PASS);
+		UseEntityCallback.EVENT.register((player, world, hand, entity, hit) ->
+			Freecam.active() ? InteractionResult.FAIL : InteractionResult.PASS);
+		UseItemCallback.EVENT.register((player, world, hand) ->
+			Freecam.active() ? InteractionResult.FAIL : InteractionResult.PASS);
+
 		HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("blockradar", "hud"), RadarHud::render);
 
 		// Left click. Returning true stops the game from also breaking the block.
 		ClientPreAttackCallback.EVENT.register((client, player, clickCount) -> {
-			if (clickCount == 0 || !Settings.radarOn || client.screen != null) return false;
+			// In freecam a click never digs or hits, it can only open the radar's info.
+			if (clickCount == 0 || !Settings.radarOn || client.screen != null) return Freecam.active();
 			Target target = target(client, player);
-			if (target == null) return false;
+			if (target == null) return Freecam.active();
 			client.setScreen(target.screen().get());
 			return true;
 		});
@@ -81,13 +104,17 @@ public class BlockRadarClient implements ClientModInitializer {
 				saveSettings();
 				SCANNER.clear();
 			}
+			while (freecamKey.consumeClick()) {
+				if (client.screen == null) Freecam.toggle(client);
+			}
+			Freecam.tick(client);
 			while (menuKey.consumeClick()) {
 				client.setScreen(new RadarScreen());
 			}
 			while (chunkKey.consumeClick()) {
 				if (Settings.radarOn && client.player != null) {
-					Scanner.Chunk here = new Scanner.Chunk(
-						client.player.getBlockX() >> 4, client.player.getBlockZ() >> 4);
+					BlockPos at = Freecam.anchor(client.player);
+					Scanner.Chunk here = new Scanner.Chunk(at.getX() >> 4, at.getZ() >> 4);
 					client.setScreen(new ChunkScreen(SCANNER.report(here)));
 				}
 			}
@@ -119,8 +146,8 @@ public class BlockRadarClient implements ClientModInitializer {
 						.setAlwaysOnTop();
 					// The solid fill is hidden by walls like a real block, and cleared when
 					// you are in or near the chunk so you can see the blocks you dig.
-					if (Settings.chunks.fills(chunk.x(), chunk.z(),
-							client.player.getX(), client.player.getZ())) {
+					Vec3 viewer = Freecam.active() ? Freecam.eye() : client.player.position();
+					if (Settings.chunks.fills(chunk.x(), chunk.z(), viewer.x, viewer.z)) {
 						Gizmos.cuboid(column, GizmoStyle.strokeAndFill(CHUNK_BLUE, 3.0F, CHUNK_BLUE));
 					}
 				}
@@ -144,7 +171,7 @@ public class BlockRadarClient implements ClientModInitializer {
 			if (target != null) {
 				hint = target.hint();
 			} else {
-				Scanner.Hit aimed = aimedHit(client);
+				Scanner.Hit aimed = Freecam.active() ? null : aimedHit(client);
 				if (aimed != null) hint = "Sneak + left click to see: " + aimed.block().getName().getString();
 			}
 		}
@@ -174,13 +201,14 @@ public class BlockRadarClient implements ClientModInitializer {
 	 */
 	private Target target(Minecraft client, LocalPlayer player) {
 		if (client.level == null) return null;
-		HitResult aim = client.hitResult;
+		boolean flying = Freecam.active();
+		HitResult aim = flying ? null : client.hitResult;
 		if (aim != null && aim.getType() == HitResult.Type.ENTITY) return null;
 		boolean blockInReach = aim != null && aim.getType() == HitResult.Type.BLOCK;
 		if (blockInReach && !player.isShiftKeyDown()) return null; // digging
 
-		// Look for a highlight along the line of sight.
-		Vec3 eye = player.getEyePosition();
+		// Look for a highlight along the line of sight (from the camera in freecam).
+		Vec3 eye = flying ? Freecam.eye() : player.getEyePosition();
 		Vec3 end = eye.add(player.getViewVector(1.0F).scale(1024));
 
 		Scanner.Hit best = null;
@@ -202,7 +230,7 @@ public class BlockRadarClient implements ClientModInitializer {
 		Scanner.Chunk nearest = null;
 		for (Scanner.Chunk chunk : SCANNER.marked()) {
 			// The chunk you stand in is opened with its own key.
-			if (chunk.x() == player.getBlockX() >> 4 && chunk.z() == player.getBlockZ() >> 4) continue;
+			if (!flying && chunk.x() == player.getBlockX() >> 4 && chunk.z() == player.getBlockZ() >> 4) continue;
 			Optional<Vec3> point = column(client.level, chunk).clip(eye, end);
 			if (point.isEmpty()) continue;
 			double distance = eye.distanceToSqr(point.get());

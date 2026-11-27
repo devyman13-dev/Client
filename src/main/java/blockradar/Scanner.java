@@ -148,15 +148,16 @@ public final class Scanner {
 
 		if (!sweeping) {
 			// Between scans the radar rests, unless the player has reached a new chunk.
-			boolean movedOn = player.getBlockX() >> 4 != sweptX || player.getBlockZ() >> 4 != sweptZ;
-			if (rest <= 0 || movedOn) startSweep(client, player);
+			BlockPos at = Freecam.anchor(player);
+			boolean movedOn = at.getX() >> 4 != sweptX || at.getZ() >> 4 != sweptZ;
+			if (rest <= 0 || movedOn) startSweep(client, at);
 			else rest--;
 		}
 
 		long deadline = System.nanoTime() + Settings.scanMillis * 1_000_000L;
 		while (!queue.isEmpty() && System.nanoTime() < deadline) {
 			int[] next = queue.poll();
-			scanChunk(next[0], next[1], player.getBlockY());
+			scanChunk(next[0], next[1], Freecam.anchor(player).getY());
 		}
 		if (sweeping && queue.isEmpty()) {
 			sweeping = false;
@@ -166,10 +167,10 @@ public final class Scanner {
 		if (++ticks % 10 == 0) refreshDrawn(player);
 	}
 
-	private void startSweep(Minecraft client, LocalPlayer player) {
+	private void startSweep(Minecraft client, BlockPos at) {
 		int radius = client.options.getEffectiveRenderDistance();
-		int px = player.getBlockX() >> 4;
-		int pz = player.getBlockZ() >> 4;
+		int px = at.getX() >> 4;
+		int pz = at.getZ() >> 4;
 
 		// Forget chunks that are now out of range.
 		for (Iterator<Long> it = chunks.keySet().iterator(); it.hasNext();) {
@@ -200,6 +201,8 @@ public final class Scanner {
 		return known.computeIfAbsent(block, b -> {
 			String id = BuiltInRegistries.BLOCK.getKey(b).toString();
 			String name = path(id);
+			// A hidden block is treated like a normal one: no boxes, counts or base chance.
+			if (HiddenBlocks.hides(Settings.hidden, id)) return new Rule(null, false, 0, false, 0);
 			boolean picked = Settings.picked.contains(id) && Picks.allowed(name);
 			return new Rule(Rules.classify(name, "", "", Integer.MAX_VALUE), Rules.dependsOnHeight(name),
 				Colors.of(name), picked, b.defaultMapColor().col);
@@ -283,7 +286,7 @@ public final class Scanner {
 	/** Picks the nearest hits to draw. Counting always uses every block. */
 	private void refreshDrawn(LocalPlayer player) {
 		if (player == null) return;
-		BlockPos here = player.blockPosition();
+		BlockPos here = Freecam.anchor(player);
 		int px = here.getX() >> 4;
 		int pz = here.getZ() >> 4;
 		List<Long> nearest = new ArrayList<>(chunks.keySet());

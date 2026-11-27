@@ -105,7 +105,10 @@ public class RadarScreen extends Screen implements Menu.Listener {
 				}));
 		}
 		rows.add(new Menu.Row("Pick blocks...").help("Choose any blocks to look for")
-			.click(() -> this.minecraft.setScreen(new BlockPickerScreen(this))));
+			.click(() -> this.minecraft.setScreen(new BlockPickerScreen(this, false))));
+		rows.add(new Menu.Row("Hide blocks...").help("Choose blocks you do not want to see")
+			.detail(Settings.hidden.isEmpty() ? "" : Format.compact(Settings.hidden.size()))
+			.click(() -> this.minecraft.setScreen(new BlockPickerScreen(this, true))));
 	}
 
 	private void renderRows(List<Menu.Row> rows) {
@@ -139,6 +142,32 @@ public class RadarScreen extends Screen implements Menu.Listener {
 					0, ChunkStyle.MOST_BLOCKS, 8)));
 			rows.add(new Menu.Row("Max").setting().help("Most chunks drawn, nearest first (fewer is faster)")
 				.slider(new Menu.Slider(() -> Settings.maxChunks, v -> Settings.maxChunks = v, 8, 256, 8)));
+		}
+
+		boolean cam = EXPANDED.contains("freecam");
+		rows.add(new Menu.Row("Freecam").on(Freecam.active()).detail(onOff(Freecam.active()))
+			.help("Fly the camera through walls and underground (H). Your character stays put.")
+			.click(() -> {
+				Freecam.toggle(this.minecraft);
+				if (Freecam.active()) this.minecraft.setScreen(null); // close the menu so you can fly
+			})
+			.more(cam, () -> expand("freecam")));
+		if (cam) {
+			rows.add(new Menu.Row("Speed").setting().detail(" b/s").help("Flying speed in blocks per second")
+				.slider(new Menu.Slider(() -> Settings.freecamSpeed, v -> Settings.freecamSpeed = v, 1, 60, 1)));
+			rows.add(new Menu.Row("Boost").setting().detail("x").help("Speed multiplier while holding sprint")
+				.slider(new Menu.Slider(() -> Settings.freecamBoost, v -> Settings.freecamBoost = v, 1, 8, 1)));
+			rows.add(new Menu.Row("Smooth").setting().on(Settings.freecamSmooth).detail(onOff(Settings.freecamSmooth))
+				.help("Ease in and out of movement instead of stopping instantly")
+				.click(() -> Settings.freecamSmooth = !Settings.freecamSmooth));
+			rows.add(new Menu.Row("Exit on hit").setting().on(Settings.freecamExitOnHurt)
+				.detail(onOff(Settings.freecamExitOnHurt))
+				.help("Leave freecam when your character takes damage")
+				.click(() -> Settings.freecamExitOnHurt = !Settings.freecamExitOnHurt));
+			rows.add(new Menu.Row("Keep view").setting().on(Settings.freecamRestoreView)
+				.detail(onOff(Settings.freecamRestoreView))
+				.help("Turn your character back the way it faced when you leave freecam")
+				.click(() -> Settings.freecamRestoreView = !Settings.freecamRestoreView));
 		}
 
 		rows.add(new Menu.Row("HUD").on(Settings.hud).help("Counts and FPS in the top left while playing")
