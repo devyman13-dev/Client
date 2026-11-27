@@ -28,6 +28,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -39,6 +44,9 @@ public class BlockRadarClient implements ClientModInitializer {
 
 	/** Chunk color. */
 	static final int CHUNK_BLUE = 0xFF2F7BFF;
+	/** Entity ESP colors, used when "By type" is on. */
+	private static final int ESP_HOSTILE = 0xFFFF4A4A;
+	private static final int ESP_PASSIVE = 0xFF4AFF7A;
 	/** The "click to see" check runs once every this many ticks. */
 	private static final int HINT_TICKS = 4;
 
@@ -71,6 +79,8 @@ public class BlockRadarClient implements ClientModInitializer {
 		KeyMapping chunkKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.chunk", InputConstants.KEY_N, keys));
 
+		KeyMapping espKey = KeyBindingHelper.registerKeyBinding(
+			new KeyMapping("key.blockradar.esp", InputConstants.KEY_G, keys));
 		KeyMapping freecamKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.freecam", InputConstants.KEY_H, keys));
 
@@ -104,6 +114,10 @@ public class BlockRadarClient implements ClientModInitializer {
 				saveSettings();
 				SCANNER.clear();
 			}
+			while (espKey.consumeClick()) {
+				Settings.entityEsp = !Settings.entityEsp;
+				saveSettings();
+			}
 			while (freecamKey.consumeClick()) {
 				if (client.screen == null) Freecam.toggle(client);
 			}
@@ -120,17 +134,38 @@ public class BlockRadarClient implements ClientModInitializer {
 			}
 			if (Settings.radarOn) SCANNER.tick(client);
 
-			if (Settings.radarOn) drawOutlines(client);
+			if (Settings.radarOn || Settings.entityEsp) drawOutlines(client);
 			RadarHud.tick();
 			if (++ticks % HINT_TICKS == 0) showHint(client);
 		});
 	}
 
+	/**
+	 * True if a point is clearly behind the viewer, so drawing it would waste frames. Points
+	 * within "near" blocks are always drawn, and the cut is wide (over 110 degrees from the
+	 * view direction) so quick turns do not show anything popping in.
+	 */
+	private static boolean behind(Vec3 eye, Vec3 look, double x, double y, double z, double near) {
+		double dx = x - eye.x;
+		double dy = y - eye.y;
+		double dz = z - eye.z;
+		double distance = dx * dx + dy * dy + dz * dz;
+		if (distance < near * near) return false;
+		double along = dx * look.x + dy * look.y + dz * look.z;
+		return along < 0 && along * along > 0.12 * distance;
+	}
+
 	/** Outlines drawn during a tick stay on screen until the next tick. */
 	private void drawOutlines(Minecraft client) {
+		if (client.player == null || client.level == null) return;
+		Vec3 eye = Freecam.active() ? Freecam.eye() : client.player.getEyePosition();
+		Vec3 look = client.player.getViewVector(1.0F);
 		try (var collection = client.collectPerTickGizmos()) {
-			if (Settings.outlines) {
+			if (Settings.entityEsp) drawEntities(client, eye, look);
+			if (Settings.radarOn && Settings.outlines) {
 				for (Scanner.Hit hit : SCANNER.drawn()) {
+					BlockPos at = hit.pos();
+					if (behind(eye, look, at.getX() + 0.5, at.getY() + 0.5, at.getZ() + 0.5, 6)) continue;
 					int color = hit.color();
 					// The same color, mostly see-through, or nothing.
 					int fill = Settings.fill ? Theme.alpha(color, 0x28) : 0;
@@ -138,9 +173,10 @@ public class BlockRadarClient implements ClientModInitializer {
 						.setAlwaysOnTop();
 				}
 			}
-			if (Settings.chunks != ChunkStyle.OFF && client.level != null && client.player != null) {
+			if (Settings.radarOn && Settings.chunks != ChunkStyle.OFF && client.level != null && client.player != null) {
 				for (Scanner.Chunk chunk : SCANNER.marked()) {
 					AABB column = column(client.level, chunk);
+					if (behind(eye, look, column.getCenter().x, column.getCenter().y, column.getCenter().z, 40)) continue;
 					// The outline shows through walls.
 					Gizmos.cuboid(column, GizmoStyle.strokeAndFill(CHUNK_BLUE, 3.0F, 0))
 						.setAlwaysOnTop();
@@ -152,6 +188,38 @@ public class BlockRadarClient implements ClientModInitializer {
 					}
 				}
 			}
+		}
+	}
+
+	/** Lines around the players and mobs near the viewer. */
+	private static void drawEntities(Minecraft client, Vec3 eye, Vec3 look) {
+		if (client.level == null || client.player == null) return;
+		Vec3 viewer = Freecam.active() ? Freecam.eye() : client.player.position();
+		double range = Settings.espRange;
+		double rangeSq = range * range;
+		int drawn = 0;
+		for (Entity entity : client.level.entitiesForRendering()) {
+			if (drawn >= 300) break;
+			if (!(entity instanceof LivingEntity) || entity instanceof ArmorStand || entity.isRemoved()) continue;
+			// Your own body only shows while the camera is flying away from it.
+			if (entity == client.player && !Freecam.active()) continue;
+			int color;
+			if (entity instanceof Player) {
+				if (!Settings.espPlayers) continue;
+				color = CHUNK_BLUE;
+			} else if (entity instanceof Enemy) {
+				if (!Settings.espHostile) continue;
+				color = Settings.espByType ? ESP_HOSTILE : CHUNK_BLUE;
+			} else {
+				if (!Settings.espPassive) continue;
+				color = Settings.espByType ? ESP_PASSIVE : CHUNK_BLUE;
+			}
+			if (entity.distanceToSqr(viewer) > rangeSq) continue;
+			if (behind(eye, look, entity.getX(), entity.getY() + entity.getBbHeight() * 0.5, entity.getZ(), 6)) continue;
+			var box = Gizmos.cuboid(entity.getBoundingBox(),
+				GizmoStyle.strokeAndFill(color, (float) Settings.espWidth, 0));
+			if (Settings.espThroughWalls) box.setAlwaysOnTop();
+			drawn++;
 		}
 	}
 

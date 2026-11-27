@@ -28,6 +28,17 @@ public final class Settings {
 	public static int chunkBlocks = 64;
 	public static Accent accent = Accent.BLUE;
 
+	/** Entity ESP: lines around players and mobs. */
+	public static boolean entityEsp = false;
+	public static boolean espPlayers = true;
+	public static boolean espHostile = true;
+	public static boolean espPassive = false;
+	public static boolean espThroughWalls = true;
+	/** Color players blue, hostile mobs red and other mobs green, instead of all blue. */
+	public static boolean espByType = false;
+	public static int espRange = 64;
+	public static int espWidth = 2;
+
 	/** Freecam: speed in blocks per second, the sprint-key boost, and a few options. */
 	public static int freecamSpeed = 12;
 	public static int freecamBoost = 3;
@@ -77,6 +88,14 @@ public final class Settings {
 			if (value.name().equals(saved.getProperty("accent", "").trim())) accent = value;
 		}
 		chunkBlocks = ranged(saved, "chunkBlocks", chunkBlocks, 0, ChunkStyle.MOST_BLOCKS);
+		entityEsp = flag(saved, "entityEsp", entityEsp);
+		espPlayers = flag(saved, "espPlayers", espPlayers);
+		espHostile = flag(saved, "espHostile", espHostile);
+		espPassive = flag(saved, "espPassive", espPassive);
+		espThroughWalls = flag(saved, "espThroughWalls", espThroughWalls);
+		espByType = flag(saved, "espByType", espByType);
+		espRange = ranged(saved, "espRange", espRange, 8, 256);
+		espWidth = ranged(saved, "espWidth", espWidth, 1, 6);
 		freecamSpeed = ranged(saved, "freecamSpeed", freecamSpeed, 1, 60);
 		freecamBoost = ranged(saved, "freecamBoost", freecamBoost, 1, 8);
 		freecamSmooth = flag(saved, "freecamSmooth", freecamSmooth);
@@ -117,6 +136,14 @@ public final class Settings {
 		saved.setProperty("chunks", chunks.name());
 		saved.setProperty("accent", accent.name());
 		saved.setProperty("chunkBlocks", Integer.toString(chunkBlocks));
+		saved.setProperty("entityEsp", Boolean.toString(entityEsp));
+		saved.setProperty("espPlayers", Boolean.toString(espPlayers));
+		saved.setProperty("espHostile", Boolean.toString(espHostile));
+		saved.setProperty("espPassive", Boolean.toString(espPassive));
+		saved.setProperty("espThroughWalls", Boolean.toString(espThroughWalls));
+		saved.setProperty("espByType", Boolean.toString(espByType));
+		saved.setProperty("espRange", Integer.toString(espRange));
+		saved.setProperty("espWidth", Integer.toString(espWidth));
 		saved.setProperty("freecamSpeed", Integer.toString(freecamSpeed));
 		saved.setProperty("freecamBoost", Integer.toString(freecamBoost));
 		saved.setProperty("freecamSmooth", Boolean.toString(freecamSmooth));

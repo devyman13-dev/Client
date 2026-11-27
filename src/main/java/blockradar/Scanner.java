@@ -59,7 +59,7 @@ public final class Scanner {
 		final List<Hit> hits = new ArrayList<>();
 	}
 	private record ChunkData(Map<Key, Tally> tallies, int blocks) {}
-	private record Rule(Category category, boolean dependsOnHeight, int color, boolean picked, int mapColor) {
+	private record Rule(Category category, boolean dependsOnHeight, int color, boolean picked, int mapColor, String name) {
 		/** False if this block can never be highlighted by the selected rules. */
 		boolean possible() { return picked || category != null || dependsOnHeight; }
 	}
@@ -88,6 +88,11 @@ public final class Scanner {
 	private int sweptX;
 	private int sweptZ;
 	private int ticks;
+	private int sweeps;
+
+	/** Chunks farther than this from the viewer are only scanned again every FAR_EVERY sweeps. */
+	private static final int NEAR_CHUNKS = 4;
+	private static final int FAR_EVERY = 4;
 
 	/** If set, only this block type is highlighted. */
 	private Block focus;
@@ -180,9 +185,21 @@ public final class Scanner {
 			if (Math.abs(x - px) > radius || Math.abs(z - pz) > radius) it.remove();
 		}
 
+		boolean everything = ++sweeps % FAR_EVERY == 0;
 		List<int[]> order = new ArrayList<>();
 		for (int x = px - radius; x <= px + radius; x++) {
-			for (int z = pz - radius; z <= pz + radius; z++) order.add(new int[] {x, z});
+			for (int z = pz - radius; z <= pz + radius; z++) {
+				long key = ((long) x << 32) | (z & 0xFFFFFFFFL);
+				if (!everything && Math.max(Math.abs(x - px), Math.abs(z - pz)) > NEAR_CHUNKS
+						&& chunks.containsKey(key)) {
+					// Already scanned and far away: keep it, unless the game has unloaded it.
+					if (!(level.getChunkSource().getChunk(x, z, ChunkStatus.FULL, false) instanceof LevelChunk)) {
+						chunks.remove(key);
+					}
+					continue;
+				}
+				order.add(new int[] {x, z});
+			}
 		}
 		sweeping = true;
 		sweptX = px;
@@ -202,10 +219,10 @@ public final class Scanner {
 			String id = BuiltInRegistries.BLOCK.getKey(b).toString();
 			String name = path(id);
 			// A hidden block is treated like a normal one: no boxes, counts or base chance.
-			if (HiddenBlocks.hides(Settings.hidden, id)) return new Rule(null, false, 0, false, 0);
+			if (HiddenBlocks.hides(Settings.hidden, id)) return new Rule(null, false, 0, false, 0, "");
 			boolean picked = Settings.picked.contains(id) && Picks.allowed(name);
 			return new Rule(Rules.classify(name, "", "", Integer.MAX_VALUE), Rules.dependsOnHeight(name),
-				Colors.of(name), picked, b.defaultMapColor().col);
+				Colors.of(name), picked, b.defaultMapColor().col, name);
 		});
 	}
 
@@ -238,6 +255,8 @@ public final class Scanner {
 		// The last kind seen, so long runs of one block stay fast.
 		Key lastKey = null;
 		Tally lastTally = null;
+		Block prevBlock = null;
+		Rule prevRule = null;
 
 		for (int i : order) {
 			LevelChunkSection section = sections[i];
@@ -253,12 +272,19 @@ public final class Scanner {
 					for (int x = 0; x < 16; x++) {
 						BlockState state = section.getBlockState(x, y, z);
 						Block block = state.getBlock();
-						Rule rule = rule(block);
+						Rule rule;
+						if (block == prevBlock) {
+							rule = prevRule;
+						} else {
+							rule = rule(block);
+							prevBlock = block;
+							prevRule = rule;
+						}
 						if (!rule.possible()) continue;
 						Category category = rule.category();
 						pos.set((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
 						if (rule.dependsOnHeight()) {
-							category = Rules.classify(path(BuiltInRegistries.BLOCK.getKey(block).toString()), "", "", pos.getY());
+							category = Rules.classify(rule.name(), "", "", pos.getY());
 						}
 						if (category == null && !rule.picked()) continue;
 

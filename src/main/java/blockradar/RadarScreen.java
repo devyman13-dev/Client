@@ -144,6 +144,32 @@ public class RadarScreen extends Screen implements Menu.Listener {
 				.slider(new Menu.Slider(() -> Settings.maxChunks, v -> Settings.maxChunks = v, 8, 256, 8)));
 		}
 
+		boolean esp = EXPANDED.contains("esp");
+		rows.add(new Menu.Row("Entity ESP").on(Settings.entityEsp).color(BlockRadarClient.CHUNK_BLUE)
+			.detail(onOff(Settings.entityEsp)).help("Lines around players and mobs (G)")
+			.click(() -> Settings.entityEsp = !Settings.entityEsp)
+			.more(esp, () -> expand("esp")));
+		if (esp) {
+			rows.add(new Menu.Row("Players").setting().on(Settings.espPlayers).detail(onOff(Settings.espPlayers))
+				.help("Show other players").click(() -> Settings.espPlayers = !Settings.espPlayers));
+			rows.add(new Menu.Row("Hostile").setting().on(Settings.espHostile).detail(onOff(Settings.espHostile))
+				.help("Show monsters such as zombies and creepers")
+				.click(() -> Settings.espHostile = !Settings.espHostile));
+			rows.add(new Menu.Row("Passive").setting().on(Settings.espPassive).detail(onOff(Settings.espPassive))
+				.help("Show animals, villagers and other mobs")
+				.click(() -> Settings.espPassive = !Settings.espPassive));
+			rows.add(new Menu.Row("Range").setting().detail(" blocks").help("How far away entities are shown")
+				.slider(new Menu.Slider(() -> Settings.espRange, v -> Settings.espRange = v, 8, 256, 8)));
+			rows.add(new Menu.Row("Width").setting().help("Line thickness")
+				.slider(new Menu.Slider(() -> Settings.espWidth, v -> Settings.espWidth = v, 1, 6, 1)));
+			rows.add(new Menu.Row("Through walls").setting().on(Settings.espThroughWalls)
+				.detail(onOff(Settings.espThroughWalls)).help("Off hides lines behind blocks")
+				.click(() -> Settings.espThroughWalls = !Settings.espThroughWalls));
+			rows.add(new Menu.Row("By type").setting().on(Settings.espByType).detail(onOff(Settings.espByType))
+				.help("Players blue, hostile red, others green (off: all blue)")
+				.click(() -> Settings.espByType = !Settings.espByType));
+		}
+
 		boolean cam = EXPANDED.contains("freecam");
 		rows.add(new Menu.Row("Freecam").on(Freecam.active()).detail(onOff(Freecam.active()))
 			.help("Fly the camera through walls and underground (H). Your character stays put.")

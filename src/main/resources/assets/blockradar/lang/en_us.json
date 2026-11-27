@@ -3,5 +3,6 @@
   "key.blockradar.menu": "Open radar menu",
   "key.blockradar.toggle": "Turn radar on/off",
   "key.blockradar.chunk": "List blocks in your chunk",
-  "key.blockradar.freecam": "Toggle freecam"
+  "key.blockradar.freecam": "Toggle freecam",
+  "key.blockradar.esp": "Toggle entity ESP"
 }

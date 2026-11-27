@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `Basefinder-jar`. Unzip it to get `blockradar-1.18.0.jar`.
+   `Basefinder-jar`. Unzip it to get `blockradar-1.20.0.jar`.
 
 ### Option B: build on your computer
 1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.18.0.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.20.0.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.18.0.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.20.0.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)
@@ -33,11 +33,19 @@ in your `.minecraft/mods` folder.
 | List a chunk's suspicious blocks | Left click a blue chunk when no block is in reach |
 | List your own chunk's suspicious blocks | N |
 | Freecam on/off | H |
+| Entity ESP on/off | G |
 
 A normal left click on a block in reach always breaks it. A "Left click to see" message
 shows above the hotbar when a click would open something. Counts appear in the top right.
 The chunk list shows only the highlighted blocks in that chunk (including your picks).
 Click a row to show only that block.
+
+## Entity ESP
+Press G (or click **Entity ESP** in the Render panel) to draw blue lines around players and mobs.
+It works even when the radar is off. Right click **Entity ESP** for its settings: players,
+hostile mobs and passive mobs on or off, range (8 to 256 blocks), line width, through walls, and
+"By type" (players blue, hostile red, other mobs green). Only entities your client has loaded
+can be shown, and in freecam the range is measured from the camera.
 
 ## Freecam
 Press H (or click **Freecam** in the Render panel) to fly the camera through walls and
@@ -96,7 +104,10 @@ to move a panel, right click a title to fold it, Esc to close. Positions are rem
 - Only chunks the game has loaded can be scanned. On servers this may be less than your
   render distance.
 - Only the nearest blocks and chunks are drawn (600 and 64 by default); counts include all.
-- For more FPS pick the Max FPS preset. Changes in the world show after the next scan.
+- For more FPS pick the Max FPS preset (Settings > Preset). Boxes, chunks and entity lines that
+  are clearly behind you are not drawn, and chunks already scanned that are more than 4 chunks
+  away are only scanned again every 4th scan. Changes in the world show after the next scan
+  (up to about four scans for far chunks).
 - Blocks not listed in `Rules.java` are treated as normal. Natural structures may contain
   blocks that the finder flags.
 - Menu settings are saved in `.minecraft/config/blockradar.properties`.
