@@ -8,6 +8,11 @@ public enum ChunkStyle {
 	LINES,
 	OFF;
 
+	/** The wall height setting counts blocks upwards from here. */
+	public static final int SEA_LEVEL = 64;
+	/** The tallest setting, in blocks above sea level. */
+	public static final int MOST_BLOCKS = 128;
+
 	/** Closer than this many blocks, a chunk is not filled so you can see what you dig. */
 	private static final int CLEAR_DISTANCE = 8;
 
@@ -22,13 +27,14 @@ public enum ChunkStyle {
 	}
 
 	/**
-	 * The height the blue chunks reach: halfway up the world.
+	 * The height the blue chunks reach. They start at the bottom of the world.
 	 *
-	 * @param minY the lowest block level
-	 * @param maxY the highest block level
+	 * @param minY   the lowest block level
+	 * @param maxY   the highest block level
+	 * @param blocks how many blocks the walls rise above sea level
 	 */
-	public static int top(int minY, int maxY) {
-		return minY + (maxY + 1 - minY) / 2;
+	public static int top(int minY, int maxY, int blocks) {
+		return Math.max(minY + 1, Math.min(maxY + 1, SEA_LEVEL + blocks));
 	}
 
 	/** The style after this one, for the menu button. */

@@ -24,6 +24,8 @@ public final class Settings {
 	public static boolean hints = true;
 	/** How chunks with highlighted blocks are shown. */
 	public static ChunkStyle chunks = ChunkStyle.SOLID;
+	/** How many blocks the blue chunk walls rise above sea level. */
+	public static int chunkBlocks = 64;
 	public static Accent accent = Accent.BLUE;
 
 	/** Performance: the most boxes and chunks drawn, nearest first. */
@@ -63,6 +65,7 @@ public final class Settings {
 		for (Accent value : Accent.values()) {
 			if (value.name().equals(saved.getProperty("accent", "").trim())) accent = value;
 		}
+		chunkBlocks = ranged(saved, "chunkBlocks", chunkBlocks, 0, ChunkStyle.MOST_BLOCKS);
 		maxOutlines = ranged(saved, "maxOutlines", maxOutlines, 100, 2000);
 		maxChunks = ranged(saved, "maxChunks", maxChunks, 8, 256);
 		scanMillis = ranged(saved, "scanMillis", scanMillis, 1, 8);
@@ -92,6 +95,7 @@ public final class Settings {
 		saved.setProperty("hints", Boolean.toString(hints));
 		saved.setProperty("chunks", chunks.name());
 		saved.setProperty("accent", accent.name());
+		saved.setProperty("chunkBlocks", Integer.toString(chunkBlocks));
 		saved.setProperty("maxOutlines", Integer.toString(maxOutlines));
 		saved.setProperty("maxChunks", Integer.toString(maxChunks));
 		saved.setProperty("scanMillis", Integer.toString(scanMillis));

@@ -128,12 +128,12 @@ public class BlockRadarClient implements ClientModInitializer {
 		}
 	}
 
-	/** The blue shape of a chunk, from the bottom of the world to halfway up. */
+	/** The blue shape of a chunk, from the bottom of the world to the chosen height. */
 	private static AABB column(Level level, Scanner.Chunk chunk) {
 		int x = chunk.x() << 4;
 		int z = chunk.z() << 4;
 		return new AABB(x, level.getMinY(), z,
-			x + 16, ChunkStyle.top(level.getMinY(), level.getMaxY()), z + 16);
+			x + 16, ChunkStyle.top(level.getMinY(), level.getMaxY(), Settings.chunkBlocks), z + 16);
 	}
 
 	/** Shows "click to see" above the hotbar while there is something to open. */

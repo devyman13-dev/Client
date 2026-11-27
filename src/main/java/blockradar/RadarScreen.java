@@ -133,6 +133,10 @@ public class RadarScreen extends Screen implements Menu.Listener {
 			.click(() -> Settings.chunks = Settings.chunks.next())
 			.more(columns, () -> expand("chunks")));
 		if (columns) {
+			rows.add(new Menu.Row("Height").setting().detail(" blocks")
+				.help("How many blocks the chunk walls rise above sea level (Y=64)")
+				.slider(new Menu.Slider(() -> Settings.chunkBlocks, v -> Settings.chunkBlocks = v,
+					0, ChunkStyle.MOST_BLOCKS, 8)));
 			rows.add(new Menu.Row("Max").setting().help("Most chunks drawn, nearest first (fewer is faster)")
 				.slider(new Menu.Slider(() -> Settings.maxChunks, v -> Settings.maxChunks = v, 8, 256, 8)));
 		}

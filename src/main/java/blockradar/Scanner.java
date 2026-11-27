@@ -42,8 +42,10 @@ public final class Scanner {
 	public record Chunk(int x, int z) {}
 	/** One highlighted block type in a chunk. */
 	public record Row(Block block, int count, int color) {}
-	/** The highlighted blocks of one chunk, most common first. */
-	public record ChunkReport(Chunk chunk, List<Row> rows, int total) {}
+	/**
+	 * The highlighted blocks of one chunk, most common first, and the guess at what is there.
+	 */
+	public record ChunkReport(Chunk chunk, List<Row> rows, int total, BaseChance.Result chance) {}
 	/** Size of a touching group. "partial" means there may be more than "size". */
 	public record Group(int size, boolean partial) {}
 
@@ -351,13 +353,18 @@ public final class Scanner {
 	public ChunkReport report(Chunk where) {
 		Map<Block, Integer> counts = new HashMap<>();
 		Map<Block, Integer> colors = new HashMap<>();
+		/* Everything the radar's own rules flagged, even in categories that are switched off. */
+		Map<String, Integer> flagged = new HashMap<>();
 		int total = 0;
 		ChunkData data = chunks.get(((long) where.x() << 32) | (where.z() & 0xFFFFFFFFL));
 		if (data != null) {
 			for (Map.Entry<Key, Tally> entry : data.tallies().entrySet()) {
-				if (entry.getKey().shown() == null) continue;
 				Block block = entry.getKey().block();
 				Tally tally = entry.getValue();
+				if (entry.getKey().rule() != null) {
+					flagged.merge(path(BuiltInRegistries.BLOCK.getKey(block).toString()), tally.count, Integer::sum);
+				}
+				if (entry.getKey().shown() == null) continue;
 				total += tally.count;
 				counts.merge(block, tally.count, Integer::sum);
 				if (!tally.hits.isEmpty()) colors.putIfAbsent(block, tally.hits.get(0).color());
@@ -368,7 +375,7 @@ public final class Scanner {
 		counts.forEach((block, count) -> rows.add(new Row(block, count,
 			colors.getOrDefault(block, Theme.accent()))));
 		rows.sort(Comparator.comparingInt((Row row) -> -row.count()));
-		return new ChunkReport(where, rows, total);
+		return new ChunkReport(where, rows, total, BaseChance.of(flagged));
 	}
 
 	/** Size of the touching group (including diagonals) of the same block as this hit. */
