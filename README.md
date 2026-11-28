@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `Basefinder-jar`. Unzip it to get `blockradar-1.27.1.jar`.
+   `Basefinder-jar`. Unzip it to get `blockradar-1.27.2.jar`.
 
 ### Option B: build on your computer
 1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.27.1.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.27.2.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.27.1.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.27.2.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)

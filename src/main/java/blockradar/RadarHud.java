@@ -21,9 +21,6 @@ public final class RadarHud {
 	private static int ticks;
 
 	public static void tick() {
-		if (Settings.entityEsp && Settings.espNames && client.screen == null && !client.options.hideGui) {
-			Nametags.render(g, client, delta);
-		}
 		if (!Settings.hud || !Settings.radarOn || ++ticks % UPDATE_TICKS != 0) return;
 		Scanner.Stats stats = BlockRadarClient.SCANNER.stats();
 		List<Line> next = new ArrayList<>();
@@ -43,6 +40,9 @@ public final class RadarHud {
 		if (Freecam.active() && client.player != null && client.screen == null && !client.options.hideGui) {
 			Theme.centered(g, client.font, "FREECAM  " + Settings.freecamSpeed + " b/s",
 				client.getWindow().getGuiScaledWidth() / 2, 6, Theme.accent());
+		}
+		if (Settings.entityEsp && Settings.espNames && client.screen == null && !client.options.hideGui) {
+			Nametags.render(g, client, delta);
 		}
 		if (!Settings.hud || !Settings.radarOn || client.player == null || client.screen != null
 			|| client.options.hideGui || client.getDebugOverlay().showDebugScreen()) return;
