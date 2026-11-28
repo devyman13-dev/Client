@@ -4,5 +4,7 @@
   "key.blockradar.toggle": "Turn radar on/off",
   "key.blockradar.chunk": "List blocks in your chunk",
   "key.blockradar.freecam": "Toggle freecam",
-  "key.blockradar.esp": "Toggle entity ESP"
+  "key.blockradar.esp": "Toggle entity ESP",
+  "key.blockradar.triggerbot": "Toggle trigger bot",
+  "key.blockradar.jumpreset": "Toggle jump reset"
 }

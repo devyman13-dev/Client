@@ -1,6 +1,7 @@
 package blockradar;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -81,6 +82,10 @@ public class BlockRadarClient implements ClientModInitializer {
 
 		KeyMapping espKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.esp", InputConstants.KEY_G, keys));
+		KeyMapping triggerKey = KeyBindingHelper.registerKeyBinding(
+			new KeyMapping("key.blockradar.triggerbot", InputConstants.KEY_K, keys));
+		KeyMapping jumpKey = KeyBindingHelper.registerKeyBinding(
+			new KeyMapping("key.blockradar.jumpreset", InputConstants.KEY_U, keys));
 		KeyMapping freecamKey = KeyBindingHelper.registerKeyBinding(
 			new KeyMapping("key.blockradar.freecam", InputConstants.KEY_H, keys));
 
@@ -118,6 +123,16 @@ public class BlockRadarClient implements ClientModInitializer {
 				Settings.entityEsp = !Settings.entityEsp;
 				saveSettings();
 			}
+			while (triggerKey.consumeClick()) {
+				Settings.triggerBot = !Settings.triggerBot;
+				saveSettings();
+			}
+			TriggerBot.tick(client);
+			while (jumpKey.consumeClick()) {
+				Settings.jumpReset = !Settings.jumpReset;
+				saveSettings();
+			}
+			JumpReset.tick(client);
 			while (freecamKey.consumeClick()) {
 				if (client.screen == null) Freecam.toggle(client);
 			}
@@ -198,6 +213,7 @@ public class BlockRadarClient implements ClientModInitializer {
 		double range = Settings.espRange;
 		double rangeSq = range * range;
 		int drawn = 0;
+		List<Nametags.Tag> labels = new ArrayList<>();
 		for (Entity entity : client.level.entitiesForRendering()) {
 			if (drawn >= 300) break;
 			if (!(entity instanceof LivingEntity) || entity instanceof ArmorStand || entity.isRemoved()) continue;
@@ -220,7 +236,9 @@ public class BlockRadarClient implements ClientModInitializer {
 				GizmoStyle.strokeAndFill(color, (float) Settings.espWidth, 0));
 			if (Settings.espThroughWalls) box.setAlwaysOnTop();
 			drawn++;
+			if (Settings.espNames && labels.size() < 60) labels.add(new Nametags.Tag(entity, color));
 		}
+		Nametags.set(labels);
 	}
 
 	/** The blue shape of a chunk, from the bottom of the world to the chosen height. */

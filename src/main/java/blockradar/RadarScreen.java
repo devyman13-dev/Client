@@ -158,6 +158,15 @@ public class RadarScreen extends Screen implements Menu.Listener {
 			rows.add(new Menu.Row("Passive").setting().on(Settings.espPassive).detail(onOff(Settings.espPassive))
 				.help("Show animals, villagers and other mobs")
 				.click(() -> Settings.espPassive = !Settings.espPassive));
+			rows.add(new Menu.Row("Names").setting().on(Settings.espNames).detail(onOff(Settings.espNames))
+				.help("Show a name above each outlined player and mob")
+				.click(() -> Settings.espNames = !Settings.espNames));
+			rows.add(new Menu.Row("Health").setting().on(Settings.espHealth).detail(onOff(Settings.espHealth))
+				.help("Add their health to the name")
+				.click(() -> Settings.espHealth = !Settings.espHealth));
+			rows.add(new Menu.Row("Distance").setting().on(Settings.espDistance).detail(onOff(Settings.espDistance))
+				.help("Add how far away they are to the name")
+				.click(() -> Settings.espDistance = !Settings.espDistance));
 			rows.add(new Menu.Row("Range").setting().detail(" blocks").help("How far away entities are shown")
 				.slider(new Menu.Slider(() -> Settings.espRange, v -> Settings.espRange = v, 8, 256, 8)));
 			rows.add(new Menu.Row("Width").setting().help("Line thickness")
@@ -194,6 +203,50 @@ public class RadarScreen extends Screen implements Menu.Listener {
 				.detail(onOff(Settings.freecamRestoreView))
 				.help("Turn your character back the way it faced when you leave freecam")
 				.click(() -> Settings.freecamRestoreView = !Settings.freecamRestoreView));
+		}
+
+		boolean reset = EXPANDED.contains("jumpreset");
+		rows.add(new Menu.Row("Jump reset").on(Settings.jumpReset).detail(onOff(Settings.jumpReset))
+			.help("Jump the tick after you are hit on the ground. Single player only (U)")
+			.click(() -> Settings.jumpReset = !Settings.jumpReset)
+			.more(reset, () -> expand("jumpreset")));
+		if (reset) {
+			rows.add(new Menu.Row("Delay").setting().detail(" ticks")
+				.help("Ticks to wait after the hit before jumping (0 is the earliest possible)")
+				.slider(new Menu.Slider(() -> Settings.jumpResetDelay, v -> Settings.jumpResetDelay = v, 0, 3, 1)));
+		}
+
+		boolean trigger = EXPANDED.contains("trigger");
+		rows.add(new Menu.Row("Trigger bot").on(Settings.triggerBot).detail(onOff(Settings.triggerBot))
+			.help("Attacks when your crosshair is on a player or mob (K)")
+			.click(() -> Settings.triggerBot = !Settings.triggerBot)
+			.more(trigger, () -> expand("trigger")));
+		if (trigger) {
+			rows.add(new Menu.Row("Players").setting().on(Settings.triggerPlayers).detail(onOff(Settings.triggerPlayers))
+				.help("Hit other players").click(() -> Settings.triggerPlayers = !Settings.triggerPlayers));
+			rows.add(new Menu.Row("Hostile").setting().on(Settings.triggerHostile).detail(onOff(Settings.triggerHostile))
+				.help("Hit monsters such as zombies and creepers")
+				.click(() -> Settings.triggerHostile = !Settings.triggerHostile));
+			rows.add(new Menu.Row("Passive").setting().on(Settings.triggerPassive).detail(onOff(Settings.triggerPassive))
+				.help("Hit animals, villagers and other mobs")
+				.click(() -> Settings.triggerPassive = !Settings.triggerPassive));
+			rows.add(new Menu.Row("Cooldown").setting().on(Settings.triggerCooldown).detail(onOff(Settings.triggerCooldown))
+				.help("Wait until your attack is fully charged (full damage)")
+				.click(() -> Settings.triggerCooldown = !Settings.triggerCooldown));
+			rows.add(new Menu.Row("Delay").setting().detail(" ticks")
+				.help("Fewest ticks between attacks (20 ticks = 1 second)")
+				.slider(new Menu.Slider(() -> Settings.triggerDelay, v -> Settings.triggerDelay = v, 0, 20, 1)));
+		}
+
+		boolean fall = EXPANDED.contains("nofall");
+		rows.add(new Menu.Row("No fall").on(Settings.noFall).detail(onOff(Settings.noFall))
+			.help("No fall damage. Servers with anti-cheat may kick or ban for it.")
+			.click(() -> Settings.noFall = !Settings.noFall)
+			.more(fall, () -> expand("nofall")));
+		if (fall) {
+			rows.add(new Menu.Row("Trigger").setting().detail(" blocks")
+				.help("Starts once you have fallen this far (1 to 3). Lower is safer.")
+				.slider(new Menu.Slider(() -> Settings.noFallDistance, v -> Settings.noFallDistance = v, 1, 3, 1)));
 		}
 
 		rows.add(new Menu.Row("HUD").on(Settings.hud).help("Counts and FPS in the top left while playing")

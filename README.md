@@ -12,16 +12,16 @@ client has loaded.
    skipped: if it is missing, use Add file > Create new file, type
    `.github/workflows/build.yml` as the name, and paste in that file's text.
 4. Open the Actions tab, wait for "Build mod jar", open the run and download
-   `Basefinder-jar`. Unzip it to get `blockradar-1.20.0.jar`.
+   `Basefinder-jar`. Unzip it to get `blockradar-1.27.1.jar`.
 
 ### Option B: build on your computer
 1. Install JDK 25 (for example from adoptium.net).
 2. Open a terminal in this folder.
 3. Windows: `gradlew.bat build`   Mac/Linux: `sh gradlew build`
-4. The jar is `build/libs/blockradar-1.20.0.jar` (not the `-sources` one, if present).
+4. The jar is `build/libs/blockradar-1.27.1.jar` (not the `-sources` one, if present).
 
 ## Install
-Install Fabric Loader for 1.21.11, then put `blockradar-1.20.0.jar` and the Fabric API jar
+Install Fabric Loader for 1.21.11, then put `blockradar-1.27.1.jar` and the Fabric API jar
 in your `.minecraft/mods` folder.
 
 ## Controls (changeable in Options > Controls)
@@ -33,6 +33,8 @@ in your `.minecraft/mods` folder.
 | List a chunk's suspicious blocks | Left click a blue chunk when no block is in reach |
 | List your own chunk's suspicious blocks | N |
 | Freecam on/off | H |
+| Trigger bot on/off | K |
+| Jump reset on/off | U |
 | Entity ESP on/off | G |
 
 A normal left click on a block in reach always breaks it. A "Left click to see" message
@@ -44,8 +46,36 @@ Click a row to show only that block.
 Press G (or click **Entity ESP** in the Render panel) to draw blue lines around players and mobs.
 It works even when the radar is off. Right click **Entity ESP** for its settings: players,
 hostile mobs and passive mobs on or off, range (8 to 256 blocks), line width, through walls, and
-"By type" (players blue, hostile red, other mobs green). Only entities your client has loaded
+"By type" (players blue, hostile red, other mobs green). **Names** puts a name tag above
+each outlined entity, with optional **Health** and **Distance**. The tags are drawn on the screen,
+so they show through walls and keep one size at any distance. Only entities your client has loaded
 can be shown, and in freecam the range is measured from the camera.
+
+## Jump reset
+Press U (or click **Jump reset** in the Render panel) to turn it on. When you are hit while
+standing on the ground, it jumps on the very next tick, which is the earliest the game allows, so
+you slide back less from the knockback. Fire damage (including lava) and fall damage do not
+trigger it. Right click **Jump reset** for **Delay** (0 to 3 ticks to
+wait after the hit, 0 by default). It only works in single player worlds (including a LAN world
+you host), never on other people's servers, and it does nothing in the water, on a mount, while
+flying, in menus, or in freecam.
+
+## Trigger bot
+Press K (or click **Trigger bot** in the Render panel) to turn it on. While it is on, it attacks
+the moment your crosshair is on a player or mob, using the same left click a real mouse press
+would. You still aim and move yourself. Right click **Trigger bot** for its settings: **Players**,
+**Hostile** and **Passive** choose what it may hit, **Cooldown** waits until your attack is fully
+charged (on by default), and **Delay** sets the fewest ticks between attacks (20 ticks is one
+second). It does nothing in freecam, in menus, or while you are using an item. Many servers detect
+it and can kick or ban for it, so use it in single player or where it is allowed.
+
+## No fall
+Click **No fall** in the Render panel to take no fall damage. While you are falling, the position
+updates sent to the server say you are on the ground, so the server never counts the fall. It
+starts once you have fallen the **Trigger** distance (1 to 3 blocks, 2 by default). Your own
+movement is not changed. It is off by default. This is the mod's only mixin
+(`LocalPlayerMixin`). Many servers detect and punish it, and it does nothing against damage the
+server does not count as a fall.
 
 ## Freecam
 Press H (or click **Freecam** in the Render panel) to fly the camera through walls and

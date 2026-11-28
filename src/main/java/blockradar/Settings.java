@@ -36,8 +36,31 @@ public final class Settings {
 	public static boolean espThroughWalls = true;
 	/** Color players blue, hostile mobs red and other mobs green, instead of all blue. */
 	public static boolean espByType = false;
+	/** Names above entities, with their health and distance. */
+	public static boolean espNames = true;
+	public static boolean espHealth = true;
+	public static boolean espDistance = true;
 	public static int espRange = 64;
 	public static int espWidth = 2;
+
+	/** Jump reset: jump right after being hit on the ground (single player only). */
+	public static boolean jumpReset = false;
+	/** Ticks to wait after the hit before jumping (0 is the very next tick). */
+	public static int jumpResetDelay = 0;
+
+	/** Trigger bot: attacks when your crosshair is on a player or mob. */
+	public static boolean triggerBot = false;
+	public static boolean triggerPlayers = true;
+	public static boolean triggerHostile = true;
+	public static boolean triggerPassive = false;
+	/** Wait until your attack is fully charged before hitting. */
+	public static boolean triggerCooldown = true;
+	/** Fewest game ticks (20 a second) between its attacks. */
+	public static int triggerDelay = 0;
+
+	/** No fall damage: spoofs "on the ground" while falling past this many blocks. */
+	public static boolean noFall = false;
+	public static int noFallDistance = 2;
 
 	/** Freecam: speed in blocks per second, the sprint-key boost, and a few options. */
 	public static int freecamSpeed = 12;
@@ -94,8 +117,21 @@ public final class Settings {
 		espPassive = flag(saved, "espPassive", espPassive);
 		espThroughWalls = flag(saved, "espThroughWalls", espThroughWalls);
 		espByType = flag(saved, "espByType", espByType);
+		espNames = flag(saved, "espNames", espNames);
+		espHealth = flag(saved, "espHealth", espHealth);
+		espDistance = flag(saved, "espDistance", espDistance);
 		espRange = ranged(saved, "espRange", espRange, 8, 256);
 		espWidth = ranged(saved, "espWidth", espWidth, 1, 6);
+		jumpReset = flag(saved, "jumpReset", jumpReset);
+		jumpResetDelay = ranged(saved, "jumpResetDelay", jumpResetDelay, 0, 3);
+		triggerBot = flag(saved, "triggerBot", triggerBot);
+		triggerPlayers = flag(saved, "triggerPlayers", triggerPlayers);
+		triggerHostile = flag(saved, "triggerHostile", triggerHostile);
+		triggerPassive = flag(saved, "triggerPassive", triggerPassive);
+		triggerCooldown = flag(saved, "triggerCooldown", triggerCooldown);
+		triggerDelay = ranged(saved, "triggerDelay", triggerDelay, 0, 20);
+		noFall = flag(saved, "noFall", noFall);
+		noFallDistance = ranged(saved, "noFallDistance", noFallDistance, 1, 3);
 		freecamSpeed = ranged(saved, "freecamSpeed", freecamSpeed, 1, 60);
 		freecamBoost = ranged(saved, "freecamBoost", freecamBoost, 1, 8);
 		freecamSmooth = flag(saved, "freecamSmooth", freecamSmooth);
@@ -142,8 +178,21 @@ public final class Settings {
 		saved.setProperty("espPassive", Boolean.toString(espPassive));
 		saved.setProperty("espThroughWalls", Boolean.toString(espThroughWalls));
 		saved.setProperty("espByType", Boolean.toString(espByType));
+		saved.setProperty("espNames", Boolean.toString(espNames));
+		saved.setProperty("espHealth", Boolean.toString(espHealth));
+		saved.setProperty("espDistance", Boolean.toString(espDistance));
 		saved.setProperty("espRange", Integer.toString(espRange));
 		saved.setProperty("espWidth", Integer.toString(espWidth));
+		saved.setProperty("jumpReset", Boolean.toString(jumpReset));
+		saved.setProperty("jumpResetDelay", Integer.toString(jumpResetDelay));
+		saved.setProperty("triggerBot", Boolean.toString(triggerBot));
+		saved.setProperty("triggerPlayers", Boolean.toString(triggerPlayers));
+		saved.setProperty("triggerHostile", Boolean.toString(triggerHostile));
+		saved.setProperty("triggerPassive", Boolean.toString(triggerPassive));
+		saved.setProperty("triggerCooldown", Boolean.toString(triggerCooldown));
+		saved.setProperty("triggerDelay", Integer.toString(triggerDelay));
+		saved.setProperty("noFall", Boolean.toString(noFall));
+		saved.setProperty("noFallDistance", Integer.toString(noFallDistance));
 		saved.setProperty("freecamSpeed", Integer.toString(freecamSpeed));
 		saved.setProperty("freecamBoost", Integer.toString(freecamBoost));
 		saved.setProperty("freecamSmooth", Boolean.toString(freecamSmooth));

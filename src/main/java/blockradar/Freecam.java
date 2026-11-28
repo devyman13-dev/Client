@@ -47,6 +47,7 @@ public final class Freecam {
 	private static float savedPitch;
 	/** Where the camera's eye is, and how fast it is moving (blocks per tick). */
 	private static Vec3 eye = Vec3.ZERO;
+	private static Vec3 lastEye = Vec3.ZERO;
 	private static Vec3 velocity = Vec3.ZERO;
 
 	public static boolean active() {
@@ -61,6 +62,11 @@ public final class Freecam {
 	/** Where the camera's eye is. Only meaningful while freecam is on. */
 	public static Vec3 eye() {
 		return eye;
+	}
+
+	/** Where the camera's eye is, smoothed between ticks. */
+	public static Vec3 eye(float partialTick) {
+		return lastEye.lerp(eye, partialTick);
 	}
 
 	/** The block the radar should work around: the camera while flying, else the player. */
@@ -81,6 +87,7 @@ public final class Freecam {
 		savedYaw = player.getYRot();
 		savedPitch = player.getXRot();
 		eye = player.getEyePosition();
+		lastEye = eye;
 		velocity = Vec3.ZERO;
 
 		camera = new CameraEntity(world);
@@ -153,6 +160,7 @@ public final class Freecam {
 		Vec3 target = wish.lengthSqr() > 1.0E-6 ? wish.normalize().scale(perTick) : Vec3.ZERO;
 		velocity = Settings.freecamSmooth ? velocity.lerp(target, 0.4) : target;
 
+		lastEye = eye;
 		eye = eye.add(velocity);
 		eye = new Vec3(eye.x, Mth.clamp(eye.y, world.getMinY() - 16, world.getMaxY() + 256), eye.z);
 		camera.xo = camera.getX();

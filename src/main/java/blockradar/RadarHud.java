@@ -21,6 +21,9 @@ public final class RadarHud {
 	private static int ticks;
 
 	public static void tick() {
+		if (Settings.entityEsp && Settings.espNames && client.screen == null && !client.options.hideGui) {
+			Nametags.render(g, client, delta);
+		}
 		if (!Settings.hud || !Settings.radarOn || ++ticks % UPDATE_TICKS != 0) return;
 		Scanner.Stats stats = BlockRadarClient.SCANNER.stats();
 		List<Line> next = new ArrayList<>();
